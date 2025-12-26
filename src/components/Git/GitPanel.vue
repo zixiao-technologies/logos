@@ -7,6 +7,8 @@ import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { useGitStore } from '@/stores/git'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { useEditorStore } from '@/stores/editor'
+import { useDiffStore } from '@/stores/diff'
+import { useRouter } from 'vue-router'
 import BranchSelector from './BranchSelector.vue'
 import ChangedFileList from './ChangedFileList.vue'
 import CommitBox from './CommitBox.vue'
@@ -22,6 +24,8 @@ import '@mdui/icons/error.js'
 const gitStore = useGitStore()
 const fileExplorerStore = useFileExplorerStore()
 const editorStore = useEditorStore()
+const diffStore = useDiffStore()
+const router = useRouter()
 
 // 展开状态
 const stagedExpanded = ref(true)
@@ -108,8 +112,8 @@ const confirmDiscard = async () => {
 
 // 查看差异
 const handleDiff = async (path: string, staged: boolean) => {
-  // TODO: 在编辑器中显示差异视图
-  console.log('View diff:', path, staged)
+  await diffStore.openDiff(repoPath(), path, staged)
+  router.push('/diff')
 }
 
 // 打开文件

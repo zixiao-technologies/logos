@@ -337,6 +337,118 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('terminal:exit', handler)
       return () => ipcRenderer.removeListener('terminal:exit', handler)
     }
+  },
+
+  // ============ GitHub Actions ============
+  github: {
+    // 获取仓库信息
+    getRepoInfo: (repoPath: string): Promise<{ owner: string; repo: string } | null> =>
+      ipcRenderer.invoke('github:getRepoInfo', repoPath),
+
+    // 获取 workflows
+    getWorkflows: (repoPath: string, token?: string): Promise<any[]> =>
+      ipcRenderer.invoke('github:getWorkflows', repoPath, token),
+
+    // 获取 workflow runs
+    getWorkflowRuns: (
+      repoPath: string,
+      token?: string,
+      workflowId?: number,
+      perPage?: number
+    ): Promise<any[]> =>
+      ipcRenderer.invoke('github:getWorkflowRuns', repoPath, token, workflowId, perPage),
+
+    // 获取 workflow jobs
+    getWorkflowJobs: (repoPath: string, runId: number, token?: string): Promise<any[]> =>
+      ipcRenderer.invoke('github:getWorkflowJobs', repoPath, runId, token),
+
+    // 触发 workflow
+    triggerWorkflow: (
+      repoPath: string,
+      workflowId: number | string,
+      ref?: string,
+      inputs?: Record<string, string>,
+      token?: string
+    ): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('github:triggerWorkflow', repoPath, workflowId, ref, inputs, token),
+
+    // 取消 workflow run
+    cancelWorkflowRun: (repoPath: string, runId: number, token?: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('github:cancelWorkflowRun', repoPath, runId, token),
+
+    // 重新运行 workflow
+    rerunWorkflow: (repoPath: string, runId: number, token?: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('github:rerunWorkflow', repoPath, runId, token),
+
+    // 获取日志 URL
+    getWorkflowRunLogsUrl: (
+      repoPath: string,
+      runId: number,
+      token?: string
+    ): Promise<{ url: string; token: string }> =>
+      ipcRenderer.invoke('github:getWorkflowRunLogsUrl', repoPath, runId, token)
+  },
+
+  // ============ GitLab CI ============
+  gitlab: {
+    // 获取项目信息
+    getProjectInfo: (repoPath: string, baseUrl: string): Promise<{ projectPath: string } | null> =>
+      ipcRenderer.invoke('gitlab:getProjectInfo', repoPath, baseUrl),
+
+    // 获取 pipelines
+    getPipelines: (
+      repoPath: string,
+      baseUrl: string,
+      token?: string,
+      perPage?: number
+    ): Promise<any[]> =>
+      ipcRenderer.invoke('gitlab:getPipelines', repoPath, baseUrl, token, perPage),
+
+    // 获取 pipeline jobs
+    getPipelineJobs: (
+      repoPath: string,
+      baseUrl: string,
+      pipelineId: number,
+      token?: string
+    ): Promise<any[]> =>
+      ipcRenderer.invoke('gitlab:getPipelineJobs', repoPath, baseUrl, pipelineId, token),
+
+    // 触发 pipeline
+    triggerPipeline: (
+      repoPath: string,
+      baseUrl: string,
+      ref?: string,
+      token?: string,
+      variables?: Array<{ key: string; value: string }>
+    ): Promise<any> =>
+      ipcRenderer.invoke('gitlab:triggerPipeline', repoPath, baseUrl, ref, token, variables),
+
+    // 取消 pipeline
+    cancelPipeline: (
+      repoPath: string,
+      baseUrl: string,
+      pipelineId: number,
+      token?: string
+    ): Promise<any> =>
+      ipcRenderer.invoke('gitlab:cancelPipeline', repoPath, baseUrl, pipelineId, token),
+
+    // 重试 pipeline
+    retryPipeline: (
+      repoPath: string,
+      baseUrl: string,
+      pipelineId: number,
+      token?: string
+    ): Promise<any> =>
+      ipcRenderer.invoke('gitlab:retryPipeline', repoPath, baseUrl, pipelineId, token),
+
+    // 获取 job 日志
+    getJobLog: (
+      repoPath: string,
+      baseUrl: string,
+      jobId: number,
+      token?: string
+    ): Promise<string> =>
+      ipcRenderer.invoke('gitlab:getJobLog', repoPath, baseUrl, jobId, token)
   }
 })
 
@@ -470,6 +582,46 @@ declare global {
         list: () => Promise<string[]>
         onData: (callback: (event: TerminalDataEvent) => void) => () => void
         onExit: (callback: (event: TerminalExitEvent) => void) => () => void
+      }
+
+      // GitHub Actions
+      github: {
+        getRepoInfo: (repoPath: string) => Promise<{ owner: string; repo: string } | null>
+        getWorkflows: (repoPath: string, token?: string) => Promise<any[]>
+        getWorkflowRuns: (
+          repoPath: string,
+          token?: string,
+          workflowId?: number,
+          perPage?: number
+        ) => Promise<any[]>
+        getWorkflowJobs: (repoPath: string, runId: number, token?: string) => Promise<any[]>
+        triggerWorkflow: (
+          repoPath: string,
+          workflowId: number | string,
+          ref?: string,
+          inputs?: Record<string, string>,
+          token?: string
+        ) => Promise<{ success: boolean }>
+        cancelWorkflowRun: (repoPath: string, runId: number, token?: string) => Promise<{ success: boolean }>
+        rerunWorkflow: (repoPath: string, runId: number, token?: string) => Promise<{ success: boolean }>
+        getWorkflowRunLogsUrl: (repoPath: string, runId: number, token?: string) => Promise<{ url: string; token: string }>
+      }
+
+      // GitLab CI
+      gitlab: {
+        getProjectInfo: (repoPath: string, baseUrl: string) => Promise<{ projectPath: string } | null>
+        getPipelines: (repoPath: string, baseUrl: string, token?: string, perPage?: number) => Promise<any[]>
+        getPipelineJobs: (repoPath: string, baseUrl: string, pipelineId: number, token?: string) => Promise<any[]>
+        triggerPipeline: (
+          repoPath: string,
+          baseUrl: string,
+          ref?: string,
+          token?: string,
+          variables?: Array<{ key: string; value: string }>
+        ) => Promise<any>
+        cancelPipeline: (repoPath: string, baseUrl: string, pipelineId: number, token?: string) => Promise<any>
+        retryPipeline: (repoPath: string, baseUrl: string, pipelineId: number, token?: string) => Promise<any>
+        getJobLog: (repoPath: string, baseUrl: string, jobId: number, token?: string) => Promise<string>
       }
     }
   }

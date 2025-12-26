@@ -1,28 +1,153 @@
 /**
  * DevOps 状态管理
- * 管理流水线和监控指标，支持 WebSocket 实时更新
+ * 管理流水线和监控指标，支持 GitHub Actions 和 GitLab CI
  */
 
 import { defineStore } from 'pinia'
 import type {
   DevOpsState,
   Pipeline,
+  PipelineStatus,
+  PipelineStage,
+  PipelineJob,
   Metric,
   WSMessage,
   PipelineUpdateMessage,
   MetricUpdateMessage,
-  LogStreamMessage
+  LogStreamMessage,
+  CICDProvider
 } from '@/types'
+import { useSettingsStore } from './settings'
+import { useFileExplorerStore } from './fileExplorer'
+
+/** 扩展的 DevOps 状态 */
+interface ExtendedDevOpsState extends DevOpsState {
+  /** 当前 CI/CD 提供者 */
+  provider: CICDProvider
+  /** 仓库信息 */
+  repoInfo: { owner: string; repo: string } | null
+}
+
+/**
+ * 将 GitHub 状态映射到统一的 Pipeline 状态
+ */
+function mapGitHubStatus(status: string, conclusion: string | null): PipelineStatus {
+  if (status === 'queued' || status === 'pending' || status === 'waiting') {
+    return 'pending'
+  }
+  if (status === 'in_progress') {
+    return 'running'
+  }
+  if (status === 'completed') {
+    switch (conclusion) {
+      case 'success':
+        return 'success'
+      case 'failure':
+      case 'timed_out':
+        return 'failed'
+      case 'cancelled':
+        return 'cancelled'
+      default:
+        return 'pending'
+    }
+  }
+  return 'pending'
+}
+
+/**
+ * 将 GitLab 状态映射到统一的 Pipeline 状态
+ */
+function mapGitLabStatus(status: string): PipelineStatus {
+  switch (status) {
+    case 'success':
+      return 'success'
+    case 'failed':
+      return 'failed'
+    case 'canceled':
+      return 'cancelled'
+    case 'running':
+      return 'running'
+    case 'pending':
+    case 'created':
+    case 'waiting_for_resource':
+    case 'preparing':
+    case 'scheduled':
+    case 'manual':
+    default:
+      return 'pending'
+  }
+}
+
+/**
+ * 将 GitHub Workflow Run 转换为 Pipeline
+ */
+function mapGitHubRunToPipeline(run: any): Pipeline {
+  return {
+    id: String(run.id),
+    name: run.name || run.display_title,
+    status: mapGitHubStatus(run.status, run.conclusion),
+    branch: run.head_branch,
+    commit: run.head_sha?.substring(0, 7) || '',
+    commitMessage: run.display_title,
+    triggeredBy: run.actor?.login || run.triggering_actor?.login || 'unknown',
+    triggeredAt: run.created_at,
+    duration: run.run_started_at
+      ? Math.floor((new Date(run.updated_at).getTime() - new Date(run.run_started_at).getTime()) / 1000)
+      : null,
+    stages: []  // Jobs 需要额外请求
+  }
+}
+
+/**
+ * 将 GitHub Jobs 转换为 Pipeline Stages
+ */
+function mapGitHubJobsToStages(jobs: any[]): PipelineStage[] {
+  // GitHub Actions 没有显式的 stage 概念，每个 job 作为一个 stage
+  return jobs.map(job => ({
+    id: String(job.id),
+    name: job.name,
+    status: mapGitHubStatus(job.status, job.conclusion) as any,
+    jobs: [{
+      id: String(job.id),
+      name: job.name,
+      status: mapGitHubStatus(job.status, job.conclusion) as any,
+      duration: job.started_at && job.completed_at
+        ? Math.floor((new Date(job.completed_at).getTime() - new Date(job.started_at).getTime()) / 1000)
+        : undefined,
+      logs: undefined
+    }]
+  }))
+}
+
+/**
+ * 将 GitLab Pipeline 转换为 Pipeline
+ */
+function mapGitLabPipelineToPipeline(pipeline: any): Pipeline {
+  return {
+    id: String(pipeline.id),
+    name: `Pipeline #${pipeline.iid || pipeline.id}`,
+    status: mapGitLabStatus(pipeline.status),
+    branch: pipeline.ref,
+    commit: pipeline.sha?.substring(0, 7) || '',
+    commitMessage: '',
+    triggeredBy: pipeline.user?.name || pipeline.user?.username || 'unknown',
+    triggeredAt: pipeline.created_at,
+    duration: pipeline.duration,
+    stages: []
+  }
+}
 
 export const useDevOpsStore = defineStore('devops', {
-  state: (): DevOpsState => ({
+  state: (): ExtendedDevOpsState => ({
     pipelines: [],
     selectedPipelineId: null,
     metrics: [],
     loading: false,
     wsConnected: false,
     apiBaseUrl: 'http://localhost:3000/api',
-    error: null
+    error: null,
+    provider: 'none',
+    repoInfo: null
   }),
 
   getters: {
@@ -60,7 +185,10 @@ export const useDevOpsStore = defineStore('devops', {
       return [...state.pipelines]
         .sort((a, b) => new Date(b.triggeredAt).getTime() - new Date(a.triggeredAt).getTime())
         .slice(0, 10)
-    }
+    },
+
+    /** 成功的流水线数量 */
+    successCount: (state) => state.pipelines.filter(p => p.status === 'success').length
   },
 
   actions: {
@@ -72,25 +200,305 @@ export const useDevOpsStore = defineStore('devops', {
     },
 
     /**
-     * 获取流水线列表
+     * 设置 CI/CD 提供者
      */
-    async fetchPipelines() {
+    setProvider(provider: CICDProvider) {
+      this.provider = provider
+      this.pipelines = []
+      this.repoInfo = null
+    },
+
+    /**
+     * 获取仓库信息
+     */
+    async fetchRepoInfo() {
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) {
+        this.repoInfo = null
+        return
+      }
+
+      try {
+        const info = await window.electronAPI.github.getRepoInfo(repoPath)
+        this.repoInfo = info
+      } catch (error) {
+        console.error('Failed to get repo info:', error)
+        this.repoInfo = null
+      }
+    },
+
+    /**
+     * 获取 GitHub Actions 流水线
+     */
+    async fetchGitHubPipelines() {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) {
+        this.error = '请先打开一个项目文件夹'
+        return
+      }
+
       this.loading = true
       this.error = null
 
       try {
-        const response = await fetch(`${this.apiBaseUrl}/pipelines`)
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`)
-        }
-        const data = await response.json()
-        this.pipelines = data
+        const token = settingsStore.devops.githubToken || undefined
+        const runs = await window.electronAPI.github.getWorkflowRuns(repoPath, token, undefined, 20)
+        this.pipelines = runs.map(mapGitHubRunToPipeline)
       } catch (error) {
         this.error = (error as Error).message
-        // 使用模拟数据作为后备
+        // 如果 API 失败，加载模拟数据
         this.loadMockData()
       } finally {
         this.loading = false
+      }
+    },
+
+    /**
+     * 获取 GitHub Workflow 的 Jobs
+     */
+    async fetchGitHubJobs(pipelineId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.githubToken || undefined
+        const jobs = await window.electronAPI.github.getWorkflowJobs(repoPath, Number(pipelineId), token)
+
+        // 更新 pipeline 的 stages
+        const pipeline = this.pipelines.find(p => p.id === pipelineId)
+        if (pipeline) {
+          pipeline.stages = mapGitHubJobsToStages(jobs)
+        }
+      } catch (error) {
+        console.error('Failed to fetch jobs:', error)
+      }
+    },
+
+    /**
+     * 触发 GitHub Workflow
+     */
+    async triggerGitHubWorkflow(workflowId: string | number, ref: string = 'main') {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) {
+        throw new Error('请先打开一个项目文件夹')
+      }
+
+      const token = settingsStore.devops.githubToken || undefined
+      await window.electronAPI.github.triggerWorkflow(repoPath, workflowId, ref, undefined, token)
+
+      // 刷新列表
+      await this.fetchGitHubPipelines()
+    },
+
+    /**
+     * 取消 GitHub Workflow Run
+     */
+    async cancelGitHubRun(runId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.githubToken || undefined
+        await window.electronAPI.github.cancelWorkflowRun(repoPath, Number(runId), token)
+
+        // 更新本地状态
+        const pipeline = this.pipelines.find(p => p.id === runId)
+        if (pipeline) {
+          pipeline.status = 'cancelled'
+        }
+      } catch (error) {
+        this.error = (error as Error).message
+      }
+    },
+
+    /**
+     * 重新运行 GitHub Workflow
+     */
+    async rerunGitHubWorkflow(runId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.githubToken || undefined
+        await window.electronAPI.github.rerunWorkflow(repoPath, Number(runId), token)
+
+        // 刷新列表
+        await this.fetchGitHubPipelines()
+      } catch (error) {
+        this.error = (error as Error).message
+      }
+    },
+
+    /**
+     * 获取流水线列表 (根据 provider 选择)
+     */
+    async fetchPipelines() {
+      const settingsStore = useSettingsStore()
+      this.provider = settingsStore.devops.provider
+
+      if (this.provider === 'github') {
+        await this.fetchGitHubPipelines()
+      } else if (this.provider === 'gitlab') {
+        await this.fetchGitLabPipelines()
+      } else {
+        // 无 provider，使用通用 API 或加载模拟数据
+        this.loading = true
+        this.error = null
+
+        try {
+          const response = await fetch(`${this.apiBaseUrl}/pipelines`)
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`)
+          }
+          const data = await response.json()
+          this.pipelines = data
+        } catch (error) {
+          this.error = (error as Error).message
+          this.loadMockData()
+        } finally {
+          this.loading = false
+        }
+      }
+    },
+
+    /**
+     * 获取 GitLab CI 流水线
+     */
+    async fetchGitLabPipelines() {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) {
+        this.error = '请先打开一个项目文件夹'
+        return
+      }
+
+      this.loading = true
+      this.error = null
+
+      try {
+        const token = settingsStore.devops.gitlabToken || undefined
+        const baseUrl = settingsStore.devops.gitlabUrl || 'https://gitlab.com'
+        const pipelines = await window.electronAPI.gitlab.getPipelines(repoPath, baseUrl, token, 20)
+        this.pipelines = pipelines.map(mapGitLabPipelineToPipeline)
+      } catch (error) {
+        this.error = (error as Error).message
+        // 如果 API 失败，加载模拟数据
+        this.loadMockData()
+      } finally {
+        this.loading = false
+      }
+    },
+
+    /**
+     * 获取 GitLab Pipeline 的 Jobs
+     */
+    async fetchGitLabJobs(pipelineId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.gitlabToken || undefined
+        const baseUrl = settingsStore.devops.gitlabUrl || 'https://gitlab.com'
+        const jobs = await window.electronAPI.gitlab.getPipelineJobs(repoPath, baseUrl, Number(pipelineId), token)
+
+        // 将 jobs 按 stage 分组
+        const stageMap = new Map<string, PipelineJob[]>()
+        for (const job of jobs) {
+          if (!stageMap.has(job.stage)) {
+            stageMap.set(job.stage, [])
+          }
+          stageMap.get(job.stage)!.push({
+            id: String(job.id),
+            name: job.name,
+            status: mapGitLabStatus(job.status) as any,
+            duration: job.duration || undefined,
+            logs: undefined
+          })
+        }
+
+        // 更新 pipeline 的 stages
+        const pipeline = this.pipelines.find(p => p.id === pipelineId)
+        if (pipeline) {
+          pipeline.stages = Array.from(stageMap.entries()).map(([stageName, jobs], index) => ({
+            id: `s${index}`,
+            name: stageName,
+            status: jobs.some(j => j.status === 'failed') ? 'failed' :
+                    jobs.some(j => j.status === 'running') ? 'running' :
+                    jobs.every(j => j.status === 'success') ? 'success' : 'pending',
+            jobs
+          })) as PipelineStage[]
+        }
+      } catch (error) {
+        console.error('Failed to fetch GitLab jobs:', error)
+      }
+    },
+
+    /**
+     * 取消 GitLab Pipeline
+     */
+    async cancelGitLabPipeline(pipelineId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.gitlabToken || undefined
+        const baseUrl = settingsStore.devops.gitlabUrl || 'https://gitlab.com'
+        await window.electronAPI.gitlab.cancelPipeline(repoPath, baseUrl, Number(pipelineId), token)
+
+        // 更新本地状态
+        const pipeline = this.pipelines.find(p => p.id === pipelineId)
+        if (pipeline) {
+          pipeline.status = 'cancelled'
+        }
+      } catch (error) {
+        this.error = (error as Error).message
+      }
+    },
+
+    /**
+     * 重试 GitLab Pipeline
+     */
+    async retryGitLabPipeline(pipelineId: string) {
+      const settingsStore = useSettingsStore()
+      const fileExplorerStore = useFileExplorerStore()
+      const repoPath = fileExplorerStore.rootPath
+
+      if (!repoPath) return
+
+      try {
+        const token = settingsStore.devops.gitlabToken || undefined
+        const baseUrl = settingsStore.devops.gitlabUrl || 'https://gitlab.com'
+        await window.electronAPI.gitlab.retryPipeline(repoPath, baseUrl, Number(pipelineId), token)
+
+        // 刷新列表
+        await this.fetchGitLabPipelines()
+      } catch (error) {
+        this.error = (error as Error).message
       }
     },
 
@@ -107,7 +515,6 @@ export const useDevOpsStore = defineStore('devops', {
         this.metrics = data
       } catch (error) {
         this.error = (error as Error).message
-        // 使用模拟数据作为后备
         this.loadMockMetrics()
       }
     },
@@ -116,6 +523,11 @@ export const useDevOpsStore = defineStore('devops', {
      * 触发流水线
      */
     async triggerPipeline(pipelineId: string) {
+      if (this.provider === 'github') {
+        await this.rerunGitHubWorkflow(pipelineId)
+        return
+      }
+
       try {
         const response = await fetch(`${this.apiBaseUrl}/pipelines/${pipelineId}/trigger`, {
           method: 'POST'
@@ -127,7 +539,6 @@ export const useDevOpsStore = defineStore('devops', {
         this.updatePipeline(data)
       } catch (error) {
         this.error = (error as Error).message
-        // 模拟触发
         this.mockTriggerPipeline(pipelineId)
       }
     },
@@ -136,6 +547,16 @@ export const useDevOpsStore = defineStore('devops', {
      * 取消流水线
      */
     async cancelPipeline(pipelineId: string) {
+      if (this.provider === 'github') {
+        await this.cancelGitHubRun(pipelineId)
+        return
+      }
+
+      if (this.provider === 'gitlab') {
+        await this.cancelGitLabPipeline(pipelineId)
+        return
+      }
+
       try {
         const response = await fetch(`${this.apiBaseUrl}/pipelines/${pipelineId}/cancel`, {
           method: 'POST'
@@ -147,7 +568,6 @@ export const useDevOpsStore = defineStore('devops', {
         this.updatePipeline(data)
       } catch (error) {
         this.error = (error as Error).message
-        // 模拟取消
         this.mockCancelPipeline(pipelineId)
       }
     },
@@ -156,6 +576,16 @@ export const useDevOpsStore = defineStore('devops', {
      * 重试流水线
      */
     async retryPipeline(pipelineId: string) {
+      if (this.provider === 'github') {
+        await this.rerunGitHubWorkflow(pipelineId)
+        return
+      }
+
+      if (this.provider === 'gitlab') {
+        await this.retryGitLabPipeline(pipelineId)
+        return
+      }
+
       try {
         const response = await fetch(`${this.apiBaseUrl}/pipelines/${pipelineId}/retry`, {
           method: 'POST'
@@ -167,7 +597,6 @@ export const useDevOpsStore = defineStore('devops', {
         this.updatePipeline(data)
       } catch (error) {
         this.error = (error as Error).message
-        // 模拟重试
         this.mockTriggerPipeline(pipelineId)
       }
     },
@@ -176,6 +605,16 @@ export const useDevOpsStore = defineStore('devops', {
      * 获取流水线详情
      */
     async fetchPipelineDetail(pipelineId: string) {
+      if (this.provider === 'github') {
+        await this.fetchGitHubJobs(pipelineId)
+        return this.pipelines.find(p => p.id === pipelineId)
+      }
+
+      if (this.provider === 'gitlab') {
+        await this.fetchGitLabJobs(pipelineId)
+        return this.pipelines.find(p => p.id === pipelineId)
+      }
+
       try {
         const response = await fetch(`${this.apiBaseUrl}/pipelines/${pipelineId}`)
         if (!response.ok) {
@@ -233,7 +672,6 @@ export const useDevOpsStore = defineStore('devops', {
           this.updateMetric((message as MetricUpdateMessage).data)
           break
         case 'log_stream':
-          // 处理日志流 - 可以在这里触发事件或更新 job 日志
           const logData = (message as LogStreamMessage).data
           console.log(`Job ${logData.jobId}: ${logData.log}`)
           break
@@ -484,6 +922,12 @@ export const useDevOpsStore = defineStore('devops', {
      * 初始化
      */
     async init() {
+      const settingsStore = useSettingsStore()
+      this.provider = settingsStore.devops.provider
+
+      // 获取仓库信息
+      await this.fetchRepoInfo()
+
       this.loading = true
       try {
         await Promise.all([

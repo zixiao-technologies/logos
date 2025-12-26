@@ -92,6 +92,7 @@ import '@mdui/icons/light-mode.js'
 import './styles/main.css'
 
 import { useThemeStore } from '@/stores/theme'
+import { useSettingsStore } from '@/stores/settings'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -102,5 +103,9 @@ app.use(router)
 // 初始化主题
 const themeStore = useThemeStore(pinia)
 themeStore.initTheme()
+
+// 初始化设置
+const settingsStore = useSettingsStore(pinia)
+settingsStore.init()
 
 app.mount('#app')

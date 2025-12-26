@@ -1,13 +1,24 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+/**
+ * 设置视图
+ * 管理应用程序的各项设置
+ */
 
-const darkMode = ref(true)
-const fontSize = ref(14)
-const tabSize = ref(2)
-const wordWrap = ref(true)
-const autoSave = ref(true)
-const minimap = ref(true)
+import { computed } from 'vue'
+import { useSettingsStore } from '@/stores/settings'
+import { useThemeStore } from '@/stores/theme'
+import type { CICDProvider } from '@/types/settings'
 
+// 导入图标
+import '@mdui/icons/dark-mode.js'
+import '@mdui/icons/light-mode.js'
+import '@mdui/icons/visibility.js'
+import '@mdui/icons/visibility-off.js'
+
+const settingsStore = useSettingsStore()
+const themeStore = useThemeStore()
+
+// 主题选项
 const themeOptions = [
   { label: 'Logos Dark', value: 'logos-dark' },
   { label: 'Logos Light', value: 'logos-light' },
@@ -15,7 +26,77 @@ const themeOptions = [
   { label: 'GitHub Dark', value: 'github-dark' }
 ]
 
-const selectedTheme = ref('logos-dark')
+// CI/CD 提供者选项
+const providerOptions = [
+  { label: '无', value: 'none' },
+  { label: 'GitHub Actions', value: 'github' },
+  { label: 'GitLab CI', value: 'gitlab' }
+]
+
+// 深色模式
+const darkMode = computed({
+  get: () => themeStore.isDark,
+  set: (value: boolean) => themeStore.setTheme(value ? 'dark' : 'light')
+})
+
+// 编辑器设置
+const fontSize = computed({
+  get: () => settingsStore.editor.fontSize,
+  set: (value: number) => settingsStore.updateEditor({ fontSize: value })
+})
+
+const tabSize = computed({
+  get: () => settingsStore.editor.tabSize,
+  set: (value: number) => settingsStore.updateEditor({ tabSize: value })
+})
+
+const wordWrap = computed({
+  get: () => settingsStore.editor.wordWrap,
+  set: (value: boolean) => settingsStore.updateEditor({ wordWrap: value })
+})
+
+const minimap = computed({
+  get: () => settingsStore.editor.minimap,
+  set: (value: boolean) => settingsStore.updateEditor({ minimap: value })
+})
+
+const autoSave = computed({
+  get: () => settingsStore.editor.autoSave,
+  set: (value: boolean) => settingsStore.updateEditor({ autoSave: value })
+})
+
+const colorTheme = computed({
+  get: () => settingsStore.editor.colorTheme,
+  set: (value: string) => settingsStore.updateEditor({
+    colorTheme: value as 'logos-dark' | 'logos-light' | 'monokai' | 'github-dark'
+  })
+})
+
+// DevOps 设置
+const cicdProvider = computed({
+  get: () => settingsStore.devops.provider,
+  set: (value: string) => settingsStore.setProvider(value as CICDProvider)
+})
+
+const githubToken = computed({
+  get: () => settingsStore.devops.githubToken,
+  set: (value: string) => settingsStore.setGitHubToken(value)
+})
+
+const gitlabToken = computed({
+  get: () => settingsStore.devops.gitlabToken,
+  set: (value: string) => settingsStore.setGitLabToken(value)
+})
+
+const gitlabUrl = computed({
+  get: () => settingsStore.devops.gitlabUrl,
+  set: (value: string) => settingsStore.setGitLabUrl(value)
+})
+
+const buildNotifications = computed({
+  get: () => settingsStore.devops.buildNotifications,
+  set: (value: boolean) => settingsStore.updateDevOps({ buildNotifications: value })
+})
 </script>
 
 <template>
@@ -41,7 +122,7 @@ const selectedTheme = ref('logos-dark')
           <span class="setting-label">颜色主题</span>
           <span class="setting-description">选择编辑器配色方案</span>
         </div>
-        <mdui-select :value="selectedTheme" @change="(e: any) => selectedTheme = e.target.value">
+        <mdui-select :value="colorTheme" @change="(e: any) => colorTheme = e.target.value">
           <mdui-menu-item
             v-for="theme in themeOptions"
             :key="theme.value"
@@ -60,7 +141,7 @@ const selectedTheme = ref('logos-dark')
       <div class="setting-item">
         <div class="setting-info">
           <span class="setting-label">字体大小</span>
-          <span class="setting-description">编辑器字体大小 (px)</span>
+          <span class="setting-description">编辑器字体大小 ({{ fontSize }}px)</span>
         </div>
         <mdui-slider
           :value="fontSize"
@@ -68,7 +149,7 @@ const selectedTheme = ref('logos-dark')
           :max="24"
           :step="1"
           labeled
-          @change="(e: any) => fontSize = e.target.value"
+          @change="(e: any) => fontSize = Number(e.target.value)"
         ></mdui-slider>
       </div>
 
@@ -119,18 +200,73 @@ const selectedTheme = ref('logos-dark')
 
     <!-- DevOps 设置 -->
     <mdui-card variant="outlined" class="settings-section">
-      <h2>DevOps</h2>
+      <h2>DevOps / CI/CD</h2>
 
       <div class="setting-item">
         <div class="setting-info">
-          <span class="setting-label">API 服务器</span>
-          <span class="setting-description">后端 API 地址</span>
+          <span class="setting-label">CI/CD 平台</span>
+          <span class="setting-description">选择持续集成平台</span>
         </div>
-        <mdui-text-field
-          value="http://localhost:8000"
-          variant="outlined"
-        ></mdui-text-field>
+        <mdui-select :value="cicdProvider" @change="(e: any) => cicdProvider = e.target.value">
+          <mdui-menu-item
+            v-for="provider in providerOptions"
+            :key="provider.value"
+            :value="provider.value"
+          >
+            {{ provider.label }}
+          </mdui-menu-item>
+        </mdui-select>
       </div>
+
+      <!-- GitHub 配置 -->
+      <template v-if="cicdProvider === 'github'">
+        <mdui-divider></mdui-divider>
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-label">GitHub Token</span>
+            <span class="setting-description">Personal Access Token (需要 repo 和 workflow 权限)</span>
+          </div>
+          <mdui-text-field
+            :value="githubToken"
+            type="password"
+            variant="outlined"
+            placeholder="ghp_xxxxxxxxxxxx"
+            @input="(e: any) => githubToken = e.target.value"
+          ></mdui-text-field>
+        </div>
+      </template>
+
+      <!-- GitLab 配置 -->
+      <template v-if="cicdProvider === 'gitlab'">
+        <mdui-divider></mdui-divider>
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-label">GitLab URL</span>
+            <span class="setting-description">GitLab 服务器地址 (支持自托管)</span>
+          </div>
+          <mdui-text-field
+            :value="gitlabUrl"
+            variant="outlined"
+            placeholder="https://gitlab.com"
+            @input="(e: any) => gitlabUrl = e.target.value"
+          ></mdui-text-field>
+        </div>
+
+        <mdui-divider></mdui-divider>
+        <div class="setting-item">
+          <div class="setting-info">
+            <span class="setting-label">GitLab Token</span>
+            <span class="setting-description">Personal Access Token (需要 api 权限)</span>
+          </div>
+          <mdui-text-field
+            :value="gitlabToken"
+            type="password"
+            variant="outlined"
+            placeholder="glpat-xxxxxxxxxxxx"
+            @input="(e: any) => gitlabToken = e.target.value"
+          ></mdui-text-field>
+        </div>
+      </template>
 
       <mdui-divider></mdui-divider>
 
@@ -139,7 +275,7 @@ const selectedTheme = ref('logos-dark')
           <span class="setting-label">构建通知</span>
           <span class="setting-description">流水线完成时通知</span>
         </div>
-        <mdui-switch checked></mdui-switch>
+        <mdui-switch :checked="buildNotifications" @change="buildNotifications = !buildNotifications"></mdui-switch>
       </div>
     </mdui-card>
 
@@ -216,6 +352,10 @@ mdui-slider {
 
 mdui-text-field {
   width: 300px;
+}
+
+mdui-select {
+  width: 200px;
 }
 
 .about-section {

@@ -25,6 +25,12 @@ const routes: RouteRecordRaw[] = [
     name: 'settings',
     component: () => import('@/views/SettingsView.vue'),
     meta: { title: 'Settings' }
+  },
+  {
+    path: '/diff',
+    name: 'diff',
+    component: () => import('@/views/DiffEditorView.vue'),
+    meta: { title: 'Diff' }
   }
 ]
 

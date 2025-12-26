@@ -3,6 +3,8 @@ import { join } from 'path'
 import { registerFileSystemHandlers, registerFileWatcherHandlers, cleanupFileWatchers } from './services/fileService'
 import { registerGitHandlers } from './services/gitService'
 import { registerTerminalHandlers, cleanupTerminals } from './services/terminalService'
+import { registerGitHubHandlers } from './services/githubService'
+import { registerGitLabHandlers } from './services/gitlabService'
 
 // 环境变量
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
@@ -99,6 +101,12 @@ function registerAllHandlers() {
 
   // ============ 终端操作 ============
   registerTerminalHandlers(getMainWindow)
+
+  // ============ GitHub Actions ============
+  registerGitHubHandlers()
+
+  // ============ GitLab CI ============
+  registerGitLabHandlers()
 }
 
 // 应用准备好后创建窗口
