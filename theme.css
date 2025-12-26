@@ -1,0 +1,152 @@
+
+
+:root {
+
+    --mdui-color-primary-light: 139, 92, 246;
+    --mdui-color-primary-dark: 167, 139, 250;
+
+    /* 主色容器 */
+    --mdui-color-primary-container-light: 237, 233, 254;
+    --mdui-color-primary-container-dark: 88, 28, 135;
+
+    /* 主色上的文字 */
+    --mdui-color-on-primary-light: 255, 255, 255;
+    --mdui-color-on-primary-dark: 76, 29, 149;
+
+    /* 主色容器上的文字 */
+    --mdui-color-on-primary-container-light: 44, 0, 81;
+    --mdui-color-on-primary-container-dark: 237, 233, 254;
+
+    /* 反转主色 */
+    --mdui-color-inverse-primary-light: 167, 139, 250;
+    --mdui-color-inverse-primary-dark: 139, 92, 246;
+
+
+    --mdui-color-secondary-light: 252, 211, 77;
+    --mdui-color-secondary-dark: 253, 224, 71;
+
+    /* 次要色容器 */
+    --mdui-color-secondary-container-light: 254, 249, 195;
+    --mdui-color-secondary-container-dark: 161, 98, 7;
+
+    /* 次要色上的文字 */
+    --mdui-color-on-secondary-light: 66, 32, 6;
+    --mdui-color-on-secondary-dark: 120, 53, 15;
+
+    /* 次要色容器上的文字 */
+    --mdui-color-on-secondary-container-light: 44, 16, 0;
+    --mdui-color-on-secondary-container-dark: 254, 249, 195;
+
+    /* 修仙风格背景色 - 灵感来自《凡人修仙传》 */
+    /* 浅色模式：淡雅灵气色 RGB(245, 250, 216) = #F5FAD8 */
+    --mdui-color-background-light: 245, 250, 216;
+    /* 深色模式：韩立风雷翅青色 RGB(32, 76, 99) = #204C63 */
+    --mdui-color-background-dark: 32, 76, 99;
+
+    /* 表面色 - 使用相同的背景色系 */
+    --mdui-color-surface-light: 245, 250, 216;
+    --mdui-color-surface-dark: 32, 76, 99;
+
+    --mdui-color-surface-dim-light: 230, 235, 200;
+    --mdui-color-surface-dim-dark: 25, 60, 79;
+
+    --mdui-color-surface-bright-light: 252, 255, 230;
+    --mdui-color-surface-bright-dark: 45, 95, 120;
+
+    /* 表面容器 - 渐变层次 */
+    --mdui-color-surface-container-lowest-light: 255, 255, 240;
+    --mdui-color-surface-container-lowest-dark: 20, 50, 65;
+
+    --mdui-color-surface-container-low-light: 250, 253, 225;
+    --mdui-color-surface-container-low-dark: 28, 65, 85;
+
+    --mdui-color-surface-container-light: 245, 250, 216;
+    --mdui-color-surface-container-dark: 35, 70, 90;
+
+    --mdui-color-surface-container-high-light: 240, 245, 210;
+    --mdui-color-surface-container-high-dark: 40, 80, 100;
+
+    --mdui-color-surface-container-highest-light: 235, 240, 205;
+    --mdui-color-surface-container-highest-dark: 45, 85, 105;
+
+    /* 表面变体 */
+    --mdui-color-surface-variant-light: 240, 245, 210;
+    --mdui-color-surface-variant-dark: 40, 80, 100;
+
+    /* 表面上的文字 - 确保对比度 */
+    --mdui-color-on-surface-light: 30, 30, 20;
+    --mdui-color-on-surface-dark: 240, 245, 248;
+
+    --mdui-color-on-surface-variant-light: 60, 55, 40;
+    --mdui-color-on-surface-variant-dark: 200, 210, 220;
+
+    /* 反转表面 */
+    --mdui-color-inverse-surface-light: 35, 70, 90;
+    --mdui-color-inverse-surface-dark: 230, 220, 170;
+
+    --mdui-color-inverse-on-surface-light: 245, 240, 210;
+    --mdui-color-inverse-on-surface-dark: 30, 30, 20;
+
+    /* 背景上的文字 */
+    --mdui-color-on-background-light: 30, 30, 20;
+    --mdui-color-on-background-dark: 240, 245, 248;
+
+    /* 轮廓 - 与背景色协调 */
+    --mdui-color-outline-light: 210, 215, 180;
+    --mdui-color-outline-dark: 50, 95, 115;
+
+    --mdui-color-outline-variant-light: 230, 235, 200;
+    --mdui-color-outline-variant-dark: 40, 80, 95;
+
+    /* 表面着色 */
+    --mdui-color-surface-tint-color-light: 139, 92, 246;
+    --mdui-color-surface-tint-color-dark: 167, 139, 250;
+}
+
+/* 自定义应用色彩变量 */
+:root {
+    /* 紫 */
+    --zixiao-purple: #8B5CF6;
+    --zixiao-purple-light: #A78BFA;
+    --zixiao-purple-dark: #7C3AED;
+
+    /* 雷电金 */
+    --lightning-gold: #FCD34D;
+    --lightning-gold-light: #FDE047;
+    --lightning-gold-dark: #FBBF24;
+
+    /* 深空黑 */
+    --deep-space-black: #0F172A;
+    --deep-space-black-light: #1E293B;
+    --deep-space-black-lighter: #334155;
+
+    /* 云雾白 */
+    --cloud-white: #F8FAFC;
+    --cloud-white-dark: #F1F5F9;
+    --cloud-white-darker: #E2E8F0;
+
+    /* Git 状态颜色 - RGB 格式用于 rgba() */
+    --git-added: 34, 197, 94; /* #22C55E */
+    --git-modified: 245, 158, 11; /* #F59E0B */
+    --git-deleted: 239, 68, 68; /* #EF4444 */
+    --git-untracked: 59, 130, 246; /* #3B82F6 */
+}
+
+/* 全局主题覆盖 */
+:root,
+.mdui-theme-light {
+    color: rgb(var(--mdui-color-on-background-light));
+    background-color: rgb(var(--mdui-color-background-light));
+}
+
+.mdui-theme-dark {
+    color: rgb(var(--mdui-color-on-background-dark));
+    background-color: rgb(var(--mdui-color-background-dark));
+}
+
+@media (prefers-color-scheme: dark) {
+    .mdui-theme-auto {
+        color: rgb(var(--mdui-color-on-background-dark));
+        background-color: rgb(var(--mdui-color-background-dark));
+    }
+}
