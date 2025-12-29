@@ -52,8 +52,11 @@ jobs:
       - name: Install dependencies
         run: npm ci --include=dev
 
+      - name: Build download script
+        run: npm run build:scripts
+
       - name: Install LSP Server
-        run: npm run download:lsp -- --pyright
+        run: node --enable-source-maps --experimental-specifier-resolution=node dist-scripts/download-lsp-servers.mjs --pyright
 
       - name: Build (vite + electron-builder)
         env:
