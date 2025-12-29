@@ -137,7 +137,7 @@ interface AnalysisStatus {
   queuedFiles: number
 }
 
-interface LogosServiceStatus {
+interface LSPServiceStatus {
   indexing: IndexingProgress
   analysis: AnalysisStatus
   servers: LanguageServerStatus[]
@@ -924,7 +924,7 @@ class IntelligenceServiceManager {
     }
   }
 
-  getServiceStatus(): LogosServiceStatus {
+  getServiceStatus(): LSPServiceStatus {
     // 获取 LSP 服务器状态
     const lspStatuses = lspClientManager.getServerStatuses()
     const servers: LanguageServerStatus[] = [
