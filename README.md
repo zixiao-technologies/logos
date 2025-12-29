@@ -1,8 +1,8 @@
 <div align="center">
 
-# Logos IDE
+# logos
 
-<img src="docs/assets/logo.png" alt="Logos IDE Logo" width="128" height="128">
+<img src="docs/assets/logo.png" alt="logos Logo" width="128" height="128">
 
 **A Modern, Lightweight Code Editor**
 
@@ -19,7 +19,7 @@
 
 ## About
 
-Logos IDE is a modern, lightweight code editor built with Electron and Vue 3. It features Monaco Editor integration, an integrated terminal, and a beautiful Material Design-inspired UI powered by MDUI.
+logos is a modern, lightweight code editor built with Electron and Vue 3. It features Monaco Editor integration, an integrated terminal, and a beautiful Material Design-inspired UI powered by MDUI.
 
 > *The name "Logos" comes from an elite operator in the game "Arknights" (Logos), symbolizing wisdom and insight.*
 
@@ -186,10 +186,10 @@ logos-ide/
 
 ## Configuration
 
-Logos IDE stores configuration in:
-- **macOS**: `~/Library/Application Support/Logos IDE/`
-- **Windows**: `%APPDATA%/Logos IDE/`
-- **Linux**: `~/.config/Logos IDE/`
+logos stores configuration in:
+- **macOS**: `~/Library/Application Support/logos/`
+- **Windows**: `%APPDATA%/logos/`
+- **Linux**: `~/.config/logos/`
 
 ### Editor Settings
 

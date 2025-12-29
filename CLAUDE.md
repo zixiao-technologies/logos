@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Logos IDE is an Electron-based desktop code editor built with Vue 3, featuring Monaco Editor integration, an integrated terminal with PTY support, and a Material Design UI (MDUI).
+- logos is an Electron-based desktop code editor built with Vue 3, featuring Monaco Editor integration, an integrated terminal with PTY support, and a Material Design UI (MDUI).
 
 ## Development Commands
 

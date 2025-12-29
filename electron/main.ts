@@ -18,7 +18,7 @@ function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    title: 'Logos IDE',
+    title: 'logos',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 10, y: 10 },
     webPreferences: {

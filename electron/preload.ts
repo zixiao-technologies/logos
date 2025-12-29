@@ -234,7 +234,7 @@ interface AnalysisStatus {
 }
 
 /** Logos 服务状态 */
-interface LogosServiceStatus {
+interface LSPServiceStatus {
   indexing: IndexingProgress
   analysis: AnalysisStatus
   servers: LanguageServerStatus[]
@@ -727,11 +727,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
 
     // ============ 服务状态 ============
-    getServiceStatus: (): Promise<LogosServiceStatus> =>
+    getServiceStatus: (): Promise<LSPServiceStatus> =>
       ipcRenderer.invoke('intelligence:serviceStatus'),
 
-    onServiceStatusChange: (callback: (status: LogosServiceStatus) => void) => {
-      const handler = (_: Electron.IpcRendererEvent, status: LogosServiceStatus) =>
+    onServiceStatusChange: (callback: (status: LSPServiceStatus) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, status: LSPServiceStatus) =>
         callback(status)
       ipcRenderer.on('intelligence:serviceStatusChange', handler)
       return () => ipcRenderer.removeListener('intelligence:serviceStatusChange', handler)
@@ -989,8 +989,8 @@ declare global {
         onAnalysisStatus: (callback: (status: AnalysisStatus) => void) => () => void
 
         // 服务状态
-        getServiceStatus: () => Promise<LogosServiceStatus>
-        onServiceStatusChange: (callback: (status: LogosServiceStatus) => void) => () => void
+        getServiceStatus: () => Promise<LSPServiceStatus>
+        onServiceStatusChange: (callback: (status: LSPServiceStatus) => void) => () => void
 
         // LSP 诊断
         onDiagnostics: (callback: (params: { filePath: string; diagnostics: Diagnostic[] }) => void) => () => void

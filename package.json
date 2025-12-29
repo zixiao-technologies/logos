@@ -1,7 +1,7 @@
 {
   "name": "logos",
   "version": "0.1.1",
-  "description": "Logos IDE - PRTS DevOps Platform",
+  "description": "logos - PRTS DevOps Platform",
   "author": "Zixiao System",
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -21,7 +21,6 @@
     "download:lsp:jdtls": "npx ts-node scripts/download-lsp-servers.ts --jdtls"
   },
   "keywords": [
-    "prts",
     "ide",
     "devops",
     "logos",
@@ -67,8 +66,8 @@
     "vue-tsc": "^2.0.7"
   },
   "build": {
-    "appId": "io.prts.logos-ide",
-    "productName": "Logos IDE",
+    "appId": "io.zixiao.logos",
+    "productName": "logos",
     "directories": {
       "output": "release"
     },

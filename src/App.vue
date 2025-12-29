@@ -95,7 +95,7 @@ onMounted(async () => {
   // 获取平台信息
   if (window.electronAPI) {
     const version = await window.electronAPI.getVersion()
-    console.log('Logos IDE version:', version)
+    console.log('logos version:', version)
 
     // 订阅索引进度
     unsubscribeProgress = window.electronAPI.intelligence.onIndexingProgress((progress) => {

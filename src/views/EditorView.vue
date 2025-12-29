@@ -291,7 +291,7 @@ onUnmounted(() => {
     <!-- 无打开的文件 -->
     <div v-else class="empty-state">
       <div class="welcome">
-        <h1>Logos IDE</h1>
+        <h1>logos</h1>
         <p>PRTS DevOps Platform - 智慧与洞察的化身</p>
 
         <div class="actions">

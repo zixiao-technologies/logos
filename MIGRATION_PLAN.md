@@ -1,13 +1,13 @@
-# Logos IDE Migration Plan
+# logos Migration Plan
 
 ## Overview
 
-This document outlines the plan to migrate Logos IDE from the PRTS DevOps Platform monorepo to a standalone repository.
+This document outlines the plan to migrate logos from the PRTS DevOps Platform monorepo to a standalone repository.
 
 ## Migration Goals
 
-1. **Independence**: Allow Logos IDE to be developed, versioned, and released independently
-2. **Reusability**: Enable Logos IDE to be used in other projects beyond PRTS
+1. **Independence**: Allow logos to be developed, versioned, and released independently
+2. **Reusability**: Enable logos to be used in other projects beyond PRTS
 3. **Simplified CI/CD**: Dedicated pipelines for IDE builds and releases
 4. **Community Contribution**: Lower barrier for contributors interested only in the IDE
 
@@ -135,7 +135,7 @@ logos-ide/
 {
   "name": "lsp-ide",
   "version": "0.1.0",
-  "description": "Logos IDE - A modern, lightweight code editor built with Electron and Vue 3",
+  "description": "logos - A modern, lightweight code editor built with Electron and Vue 3",
   "repository": {
     "type": "git",
     "url": "https://github.com/Zixiao-System/logos-ide.git"
