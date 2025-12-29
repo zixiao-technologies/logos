@@ -291,7 +291,7 @@ onUnmounted(() => {
     <!-- 无打开的文件 -->
     <div v-else class="empty-state">
       <div class="welcome">
-        <h1>logos</h1>
+        <h1>Logos</h1>
         <p>博士，是我的哨音惊扰了您吗？不是便好。这首曲子的名字？无名，只是闲暇时的即兴之作罢了。</p>
 
         <div class="actions">

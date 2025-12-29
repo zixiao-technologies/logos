@@ -1,7 +1,7 @@
 {
-  "name": "logos",
-  "version": "0.1.1",
-  "description": "logos - Light and Smart Code Editor",
+  "name": "Logos",
+  "version": "0.1.2",
+  "description": "Logos - Light and Smart Code Editor",
   "author": "Zixiao System",
   "license": "MIT",
   "main": "dist-electron/main.js",
@@ -14,11 +14,11 @@
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs,.ts,.tsx --fix",
     "postinstall": "electron-rebuild -f -w node-pty",
-    "download:lsp": "npx ts-node scripts/download-lsp-servers.ts",
-    "download:lsp:pyright": "npx ts-node scripts/download-lsp-servers.ts --pyright",
-    "download:lsp:gopls": "npx ts-node scripts/download-lsp-servers.ts --gopls",
-    "download:lsp:rust-analyzer": "npx ts-node scripts/download-lsp-servers.ts --rust-analyzer",
-    "download:lsp:jdtls": "npx ts-node scripts/download-lsp-servers.ts --jdtls"
+    "download:lsp": "npx ts-node --esm --prefer-ts-exts scripts/download-lsp-servers.ts",
+    "download:lsp:pyright": "npx ts-node --esm --prefer-ts-exts scripts/download-lsp-servers.ts --pyright",
+    "download:lsp:gopls": "npx ts-node --esm --prefer-ts-exts scripts/download-lsp-servers.ts --gopls",
+    "download:lsp:rust-analyzer": "npx ts-node --esm --prefer-ts-exts scripts/download-lsp-servers.ts --rust-analyzer",
+    "download:lsp:jdtls": "npx ts-node --esm --prefer-ts-exts scripts/download-lsp-servers.ts --jdtls"
   },
   "keywords": [
     "ide",

@@ -1,6 +1,6 @@
 <div align="center">
 
-# logos
+# Logos
 
 <img src="docs/assets/logo.png" alt="logos Logo" width="128" height="128">
 
