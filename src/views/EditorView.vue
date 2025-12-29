@@ -292,7 +292,7 @@ onUnmounted(() => {
     <div v-else class="empty-state">
       <div class="welcome">
         <h1>logos</h1>
-        <p>PRTS DevOps Platform - 智慧与洞察的化身</p>
+        <p>博士，是我的哨音惊扰了您吗？不是便好。这首曲子的名字？无名，只是闲暇时的即兴之作罢了。</p>
 
         <div class="actions">
           <mdui-button variant="tonal" @click="$emit('openFolder')">
