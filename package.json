@@ -2,8 +2,10 @@
   "name": "Logos",
   "version": "0.1.2",
   "description": "Logos - Light and Smart Code Editor",
-  "author": "Zixiao System",
-  "authorEmail": "hwllochen@qq.com",
+  "author": {
+    "name": "Zixiao System",
+    "email": "hwllochen@qq.com"
+  },
   "license": "MIT",
   "main": "dist-electron/main.js",
   "scripts": {
