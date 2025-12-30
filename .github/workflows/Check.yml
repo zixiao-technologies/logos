@@ -118,7 +118,7 @@ jobs:
         working-directory: logos-lang
         run: |
           export CC_wasm32_unknown_unknown="${WASI_SDK_PATH}/bin/clang"
-          export CFLAGS_wasm32_unknown_unknown="--sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -fno-exceptions"
+          export CFLAGS_wasm32_unknown_unknown="--target=wasm32-wasi --sysroot=${WASI_SDK_PATH}/share/wasi-sysroot -fno-exceptions"
           wasm-pack build crates/logos-wasm --target web --release --out-dir ../../pkg --out-name logos-lang
         shell: bash
 
