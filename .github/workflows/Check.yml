@@ -74,6 +74,11 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
 
       - name: Install wasm-pack
         run: cargo install wasm-pack --locked
@@ -92,6 +97,9 @@ jobs:
 
       - name: Build WASM
         working-directory: logos-lang
+        env:
+          CC: emcc
+          CXX: em++
         run: |
           wasm-pack build crates/logos-wasm --target web --release --out-dir ../../pkg --out-name logos-lang
 
