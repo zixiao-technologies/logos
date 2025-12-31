@@ -4,6 +4,64 @@
 
 在 Tier2 WASM 语言服务基础上，实现 JetBrains IDE 级别的高级智能功能，包括深度错误分析、TODO 扫描、安全重构、提交后分析，依赖索引等。
 
+## 设计原则
+
+### 🛡️ 错误处理与降级策略
+
+```typescript
+// src/services/intelligence/FallbackStrategy.ts
+interface IntelligenceConfig {
+  enableWasm: boolean           // WASM 模块是否可用
+  fallbackToBasic: boolean      // 降级到基础分析
+  timeout: number               // 分析超时时间 (ms)
+  maxFileSize: number           // 最大文件大小限制
+}
+
+// 三级降级策略
+enum AnalysisLevel {
+  Full = 'full',        // 完整 WASM 分析
+  Partial = 'partial',  // 部分功能 (仅语法分析)
+  Basic = 'basic',      // 基础功能 (仅高亮和简单补全)
+}
+```
+
+**降级触发条件：**
+| 条件 | 降级行为 |
+|------|---------|
+| WASM 加载失败 | 降级到 Basic 模式，显示通知 |
+| 分析超时 (>5s) | 取消当前分析，返回缓存结果 |
+| 内存不足 | 释放索引缓存，降级到 Partial |
+| 文件过大 (>1MB) | 仅分析可见区域 |
+
+### 📊 增量分析策略
+
+```rust
+// logos-lang/crates/logos-index/src/incremental.rs
+pub struct IncrementalAnalyzer {
+    file_hashes: HashMap<PathBuf, u64>,      // 文件内容哈希
+    dependency_graph: DependencyGraph,        // 文件依赖图
+    dirty_files: HashSet<PathBuf>,           // 需要重新分析的文件
+    analysis_cache: LruCache<PathBuf, AnalysisResult>,
+}
+
+impl IncrementalAnalyzer {
+    /// 仅分析变更文件及其依赖
+    pub fn analyze_incremental(&mut self, changed: &[PathBuf]) -> Vec<AnalysisResult> {
+        // 1. 计算受影响的文件集合
+        let affected = self.compute_affected_files(changed);
+        // 2. 按依赖顺序排序
+        let ordered = self.topological_sort(&affected);
+        // 3. 增量分析
+        ordered.iter().map(|f| self.analyze_file(f)).collect()
+    }
+}
+```
+
+**缓存策略：**
+- 文件级缓存：按文件哈希存储分析结果
+- 符号级缓存：跨文件引用的符号单独缓存
+- LRU 淘汰：最多保留 1000 个文件的分析结果
+
 ## 功能架构
 
 ```
@@ -367,28 +425,154 @@ interface QuickFix {
 - FixIncorrectType          // 修复类型错误
 ```
 
-## Phase 7:依赖检查系统，规则引擎，扫描依赖，用法提供，node_modules/pip/cargo分析，依赖自动安装等
+## Phase 7: 依赖检查系统
+
+### 7.1 支持的包管理器
+
+```rust
+// logos-lang/crates/logos-deps/src/package_manager.rs
+pub enum PackageManager {
+    // JavaScript/TypeScript
+    Npm,        // package.json, package-lock.json
+    Yarn,       // package.json, yarn.lock
+    Pnpm,       // package.json, pnpm-lock.yaml
+
+    // Python
+    Pip,        // requirements.txt, setup.py
+    Poetry,     // pyproject.toml, poetry.lock
+    Pipenv,     // Pipfile, Pipfile.lock
+
+    // Rust
+    Cargo,      // Cargo.toml, Cargo.lock
+
+    // Go
+    GoMod,      // go.mod, go.sum
+
+    // Java/JVM
+    Maven,      // pom.xml
+    Gradle,     // build.gradle, build.gradle.kts
+
+    // Ruby
+    Bundler,    // Gemfile, Gemfile.lock
+
+    // PHP
+    Composer,   // composer.json, composer.lock
+}
+```
+
+### 7.2 依赖数据模型
 
 ```rust
 // logos-lang/crates/logos-deps/src/lib.rs
 pub struct Dependency {
     pub name: String,
     pub version: String,
-    pub license: Option<String>,
+    pub resolved_version: Option<String>,  // 从锁文件解析的实际版本
+    pub license: Option<License>,
     pub vulnerabilities: Vec<Vulnerability>,
-    pub usageLocations: Vec<Location>,
-    pub isOutdated: bool,
-    pub isDeprecated: bool,
-    pub isDirect: bool,
-    pub PackageManager: PackageManager,
-    
+    pub usage_locations: Vec<Location>,     // 代码中的使用位置
+    pub is_outdated: bool,
+    pub is_deprecated: bool,
+    pub is_direct: bool,                    // 直接依赖 vs 传递依赖
+    pub package_manager: PackageManager,
+    pub update_available: Option<String>,   // 可用的更新版本
 }
+
 pub struct Vulnerability {
-    pub id: String,
-    pub severity: Severity,
+    pub id: String,                         // CVE-XXXX-XXXXX
+    pub severity: VulnerabilitySeverity,
     pub description: String,
-    pub fixedInVersion: Option<String>,
+    pub fixed_in_version: Option<String>,
+    pub references: Vec<String>,            // 参考链接
+    pub cvss_score: Option<f32>,            // CVSS 评分
 }
+
+pub enum VulnerabilitySeverity {
+    Critical,   // CVSS 9.0-10.0
+    High,       // CVSS 7.0-8.9
+    Medium,     // CVSS 4.0-6.9
+    Low,        // CVSS 0.1-3.9
+    None,       // CVSS 0.0
+}
+```
+
+### 7.3 许可证合规检查
+
+```rust
+// logos-lang/crates/logos-deps/src/license.rs
+pub struct License {
+    pub spdx_id: String,        // MIT, Apache-2.0, GPL-3.0, etc.
+    pub name: String,
+    pub is_osi_approved: bool,
+    pub is_copyleft: bool,
+    pub compatibility: LicenseCompatibility,
+}
+
+pub enum LicenseCompatibility {
+    Permissive,     // MIT, BSD, Apache
+    WeakCopyleft,   // LGPL, MPL
+    StrongCopyleft, // GPL, AGPL
+    Proprietary,
+    Unknown,
+}
+
+// 许可证策略配置
+pub struct LicensePolicy {
+    pub allowed: Vec<String>,       // 允许的许可证
+    pub denied: Vec<String>,        // 禁止的许可证
+    pub require_osi: bool,          // 要求 OSI 批准
+    pub allow_copyleft: bool,       // 允许 copyleft
+}
+```
+
+### 7.4 依赖面板 UI
+
+```
+┌─ Dependencies ──────────────────────────────────────────┐
+│ 📦 package.json                          [↻ Check] [⬆ Update All]
+├─────────────────────────────────────────────────────────┤
+│ ▼ ⚠️ Security Issues (2)                                │
+│   🔴 lodash@4.17.15        CVE-2021-23337 (High)       │
+│      └─ Fix: upgrade to 4.17.21                        │
+│   🟠 axios@0.21.1          CVE-2021-3749 (Medium)      │
+│      └─ Fix: upgrade to 0.21.2                         │
+├─────────────────────────────────────────────────────────┤
+│ ▼ 📋 Outdated (5)                                       │
+│   📦 vue@3.2.0 → 3.4.0                    [⬆ Update]   │
+│   📦 typescript@4.9.0 → 5.3.0             [⬆ Update]   │
+├─────────────────────────────────────────────────────────┤
+│ ▼ 📜 License Issues (1)                                 │
+│   ⚠️ some-pkg@1.0.0 (GPL-3.0) - Copyleft detected      │
+├─────────────────────────────────────────────────────────┤
+│ ▼ ✅ All Dependencies (48)                              │
+│   📦 vue@3.2.0              MIT          ✅            │
+│   📦 pinia@2.1.0            MIT          ✅            │
+│   ...                                                   │
+└─────────────────────────────────────────────────────────┘
+```
+
+### 7.5 自动安装与更新
+
+```typescript
+// src/services/deps/DependencyManager.ts
+interface DependencyAction {
+  type: 'install' | 'update' | 'remove'
+  packages: PackageSpec[]
+  packageManager: PackageManager
+}
+
+interface PackageSpec {
+  name: string
+  version?: string  // 不指定则安装最新
+  dev?: boolean     // 开发依赖
+}
+
+// 支持的命令
+// npm install <pkg>
+// yarn add <pkg>
+// pip install <pkg>
+// cargo add <pkg>
+// go get <pkg>
 ```
 
 
@@ -505,4 +689,162 @@ similar = "2.0"         # diff 算法
 | 安全删除 | ✅ | ✅ |
 | 代码检查 | 1000+ | 20+ |
 | 提交分析 | 部分 | ✅ |
-| AI 建议 | Copilot | 未来计划 |
+| 依赖检查 | 部分 | ✅ |
+| 许可证合规 | ❌ | ✅ |
+| AI 建议 | Copilot | Phase 8 |
+
+## Phase 8: AI 增强分析 (未来计划)
+
+### 8.1 AI 代码审查
+
+```typescript
+// src/services/ai/AICodeReviewer.ts
+interface AIReviewConfig {
+  provider: 'openai' | 'anthropic' | 'local'  // LLM 提供商
+  model: string                                // 模型名称
+  maxTokens: number                            // 最大 token 数
+  temperature: number                          // 创造性参数
+}
+
+interface AIReviewResult {
+  summary: string                              // 总体评价
+  issues: AIIssue[]                           // 发现的问题
+  suggestions: AISuggestion[]                 // 改进建议
+  refactorHints: RefactorHint[]               // 重构提示
+}
+
+interface AIIssue {
+  severity: 'critical' | 'warning' | 'info'
+  category: 'security' | 'performance' | 'maintainability' | 'readability'
+  location: Range
+  description: string
+  explanation: string                          // 详细解释
+  suggestedFix?: string                       // 建议的修复代码
+}
+```
+
+### 8.2 智能代码生成
+
+```typescript
+// src/services/ai/AICodeGenerator.ts
+interface GenerationContext {
+  currentFile: string
+  cursorPosition: Position
+  selectedCode?: string
+  surroundingCode: string                      // 上下文代码
+  projectContext: ProjectSummary               // 项目信息
+}
+
+// 支持的生成类型
+type GenerationType =
+  | 'complete'           // 代码补全
+  | 'explain'            // 代码解释
+  | 'refactor'           // 重构建议
+  | 'test'               // 生成测试
+  | 'document'           // 生成文档
+  | 'fix'                // 修复代码
+```
+
+### 8.3 代码异味检测
+
+```typescript
+// src/services/ai/CodeSmellDetector.ts
+interface CodeSmell {
+  type: CodeSmellType
+  severity: number                             // 1-10
+  location: Range
+  description: string
+  refactorSuggestion: string
+}
+
+type CodeSmellType =
+  | 'long_method'          // 方法过长
+  | 'god_class'            // 上帝类
+  | 'feature_envy'         // 特征嫉妒
+  | 'data_clump'           // 数据泥团
+  | 'primitive_obsession'  // 基本类型偏执
+  | 'shotgun_surgery'      // 散弹式修改
+  | 'parallel_inheritance' // 平行继承
+  | 'dead_code'            // 死代码
+  | 'speculative_generality' // 投机泛化
+```
+
+### 8.4 自然语言交互
+
+```typescript
+// src/services/ai/NLInterface.ts
+interface NLCommand {
+  input: string                                // 用户输入
+  context: CodeContext                         // 当前上下文
+}
+
+interface NLResponse {
+  action: NLAction
+  explanation: string
+  codeChanges?: WorkspaceEdit
+  followUpQuestions?: string[]
+}
+
+// 支持的自然语言命令
+// "重命名这个函数为 getUserById"
+// "添加参数校验"
+// "提取这段代码为一个新方法"
+// "解释这段代码做了什么"
+// "这里有什么潜在的 bug 吗？"
+```
+
+### 8.5 AI 配置与隐私
+
+```json
+// .logos/ai.json
+{
+  "enabled": true,
+  "provider": "anthropic",
+  "model": "claude-3-sonnet",
+  "features": {
+    "codeReview": true,
+    "codeGeneration": true,
+    "naturalLanguage": true
+  },
+  "privacy": {
+    "sendCodeToCloud": true,        // 是否发送代码到云端
+    "excludePatterns": [            // 排除的文件模式
+      "**/.env",
+      "**/secrets/**"
+    ],
+    "anonymizeCode": false          // 代码匿名化
+  },
+  "localModel": {                   // 本地模型配置 (隐私优先)
+    "enabled": false,
+    "modelPath": "~/.logos/models/codellama-7b"
+  }
+}
+```
+
+### 8.6 AI 面板 UI（需要Claude Code集成或者使用anthropic api）
+
+```
+┌─ AI Assistant ──────────────────────────────────────────┐
+│ 💬 Ask anything about your code...            [⚙️ Settings]
+├─────────────────────────────────────────────────────────┤
+│ 🤖 Code Review Summary                                  │
+│ ┌─────────────────────────────────────────────────────┐ │
+│ │ Found 3 issues in the selected code:                │ │
+│ │                                                     │ │
+│ │ 🔴 Security: SQL injection risk at line 45         │ │
+│ │ 🟡 Performance: N+1 query pattern detected         │ │
+│ │ 🔵 Style: Consider extracting to separate method   │ │
+│ └─────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────┤
+│ 💡 Suggestions                                          │
+│ ├─ Use parameterized queries                [Apply]    │
+│ ├─ Add eager loading for relations          [Apply]    │
+│ └─ Extract validation logic                 [Apply]    │
+├─────────────────────────────────────────────────────────┤
+│ 📝 Chat History                                         │
+│ You: 这个函数有什么问题？                               │
+│ AI: 这个函数存在以下问题...                            │
+│ You: 如何修复 SQL 注入？                                │
+│ AI: 你可以使用参数化查询...                            │
+└─────────────────────────────────────────────────────────┘
+```

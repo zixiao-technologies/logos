@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 讨论区
+    url: https://github.com/logos-ide/logos/discussions
+    about: 使用讨论区进行问答和一般性讨论
+  - name: 📖 文档
+    url: https://logos-ide.github.io/docs
+    about: 查看官方文档获取使用帮助
