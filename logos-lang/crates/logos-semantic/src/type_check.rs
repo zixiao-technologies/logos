@@ -383,8 +383,8 @@ mod tests {
 
     fn test_range() -> Range {
         Range {
-            start: Position { line: 0, character: 0 },
-            end: Position { line: 0, character: 10 },
+            start: Position { line: 0, column: 0 },
+            end: Position { line: 0, column: 10 },
         }
     }
 
