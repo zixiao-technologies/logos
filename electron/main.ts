@@ -12,47 +12,36 @@ import { registerCommitAnalysisHandlers } from './services/commitAnalysisService
 // 环境变量
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
-// Sentry 初始化状态
-let sentryInitialized = false
-
-// 初始化 Sentry (启动时禁用，等待用户同意后启用)
-function initSentry() {
-  if (sentryInitialized) return
-
-  Sentry.init({
-    dsn: 'https://adc9e827519bec3b604975a644a3282a@o4510655959072768.ingest.us.sentry.io/4510655961563136',
-    enabled: false, // 默认禁用，等待用户同意
-    environment: isDev ? 'development' : 'production',
-    release: `logos@${app.getVersion()}`,
-    beforeSend(event) {
-      // 移除敏感信息
-      if (event.user) {
-        delete event.user.ip_address
-        delete event.user.email
-      }
-      // 移除文件路径中的用户名
-      if (event.exception?.values) {
-        event.exception.values.forEach(ex => {
-          if (ex.stacktrace?.frames) {
-            ex.stacktrace.frames.forEach(frame => {
-              if (frame.filename) {
-                frame.filename = frame.filename.replace(/\/Users\/[^/]+/g, '/Users/***')
-              }
-            })
-          }
-        })
-      }
-      return event
+// 立即初始化 Sentry (必须在 app ready 事件之前)
+// 默认禁用，等待用户同意后启用
+Sentry.init({
+  dsn: 'https://adc9e827519bec3b604975a644a3282a@o4510655959072768.ingest.us.sentry.io/4510655961563136',
+  enabled: false, // 默认禁用，等待用户同意
+  environment: isDev ? 'development' : 'production',
+  beforeSend(event) {
+    // 移除敏感信息
+    if (event.user) {
+      delete event.user.ip_address
+      delete event.user.email
     }
-  })
-  sentryInitialized = true
-}
+    // 移除文件路径中的用户名
+    if (event.exception?.values) {
+      event.exception.values.forEach(ex => {
+        if (ex.stacktrace?.frames) {
+          ex.stacktrace.frames.forEach(frame => {
+            if (frame.filename) {
+              frame.filename = frame.filename.replace(/\/Users\/[^/]+/g, '/Users/***')
+            }
+          })
+        }
+      })
+    }
+    return event
+  }
+})
 
 // 启用 Sentry
 function enableSentry() {
-  if (!sentryInitialized) {
-    initSentry()
-  }
   const client = Sentry.getClient()
   if (client) {
     client.getOptions().enabled = true

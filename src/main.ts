@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
+import * as Sentry from '@sentry/electron/renderer'
 import App from './App.vue'
 import router from './router'
 
@@ -107,5 +108,16 @@ themeStore.initTheme()
 // 初始化设置
 const settingsStore = useSettingsStore(pinia)
 settingsStore.init()
+
+// 初始化 Sentry 渲染进程 (与主进程配合工作)
+// 必须在 telemetry enable 之前初始化
+Sentry.init({
+  // 渲染进程不需要 DSN，它会通过 IPC 发送到主进程
+})
+
+// 同步遥测状态到主进程
+if (settingsStore.isTelemetryEnabled && window.electronAPI?.telemetry) {
+  window.electronAPI.telemetry.enable()
+}
 
 app.mount('#app')

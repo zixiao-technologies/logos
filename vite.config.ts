@@ -40,7 +40,7 @@ export default defineConfig({
     }
   ]), renderer(), sentryVitePlugin({
     org: "zixiaosystem",
-    project: "electron"
+    project: "logos"
   })],
   resolve: {
     alias: {
