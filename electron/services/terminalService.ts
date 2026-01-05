@@ -51,6 +51,28 @@ function getDefaultEnv(): Record<string, string> {
   // 设置 COLORTERM
   env.COLORTERM = 'truecolor'
 
+  // macOS/Linux: 确保 PATH 包含常用的命令路径
+  // GUI 应用程序启动时可能不会继承完整的用户 shell PATH
+  if (os.platform() !== 'win32') {
+    const additionalPaths = [
+      '/opt/homebrew/bin',        // Homebrew (Apple Silicon)
+      '/usr/local/bin',           // Homebrew (Intel) / 通用
+      '/usr/local/sbin',
+      `${os.homedir()}/.local/bin`,  // pipx, cargo 等用户安装
+      `${os.homedir()}/.cargo/bin`,  // Rust cargo
+      `${os.homedir()}/.nvm/versions/node/*/bin`, // nvm
+      '/opt/local/bin',           // MacPorts
+    ]
+    const currentPath = env.PATH || ''
+    const pathSet = new Set(currentPath.split(':'))
+    for (const p of additionalPaths) {
+      if (!pathSet.has(p)) {
+        pathSet.add(p)
+      }
+    }
+    env.PATH = Array.from(pathSet).join(':')
+  }
+
   return env
 }
 
