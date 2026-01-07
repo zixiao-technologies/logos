@@ -363,8 +363,10 @@ jobs:
             chown -R builder:builder .
             su builder -c 'makepkg --printsrcinfo > .SRCINFO'
           "
-          # Fix permissions after docker run (docker runs as root)
-          sudo chown -R $(whoami):$(id -gn) .
+
+      - name: Fix permissions after docker
+        working-directory: aur-repo
+        run: sudo chown -R $(whoami):$(id -gn) .
 
       - name: Commit and push to AUR
         working-directory: aur-repo
@@ -389,7 +391,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
 
       - name: Update README download links
