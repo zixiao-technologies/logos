@@ -80,7 +80,7 @@ echo.
 
 REM Install npm dependencies
 echo [2/5] Installing npm dependencies...
-call npm ci --include=dev
+call npm install
 if errorlevel 1 (
     echo Error: npm ci failed
     exit /b 1

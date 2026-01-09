@@ -41,8 +41,10 @@ git checkout -b "${BRANCH}"
 
 # Update README download links
 echo "Updating README.md..."
-sed -i "s|\[Download\](#)|\[Download\](${BASE_URL}/Logos-${VERSION}-arm64.dmg)|g" README.md
-sed -i "s|version-[0-9.]*-|version-${VERSION}-|g" README.md
+# Replace version in release download URLs (e.g., /v2026.2.0/ -> /v2026.2.1/)
+sed -i "s|/releases/download/v[0-9.]*|/releases/download/v${VERSION}|g" README.md
+# Replace version in filenames (e.g., Logos-2026.2.0- -> Logos-2026.2.1-)
+sed -i "s|Logos-[0-9.]*-|Logos-${VERSION}-|g" README.md
 
 # Update package.json version
 echo "Updating package.json..."

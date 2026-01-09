@@ -75,7 +75,7 @@ echo ""
 
 # Install npm dependencies
 echo "[2/5] Installing npm dependencies..."
-npm ci --include=dev
+npm install
 echo ""
 
 # Build WASM
