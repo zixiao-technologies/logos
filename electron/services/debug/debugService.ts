@@ -7,6 +7,7 @@ import { BrowserWindow } from 'electron'
 import { ChildProcess } from 'child_process'
 import * as path from 'path'
 import * as fs from 'fs'
+import * as crypto from 'crypto'
 import { DAPClient } from './DAPClient'
 import type {
   DebugSession,
@@ -622,7 +623,11 @@ export class DebugService extends EventEmitter {
   // ============ Private Methods ============
 
   private generateSessionId(): string {
-    return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    // Use cryptographically secure randomness for session identifiers
+    const randomPart = typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : crypto.randomBytes(16).toString('hex')
+    return `session_${Date.now()}_${randomPart}`
   }
 
   private getSessionEntry(sessionId?: string) {
