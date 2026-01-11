@@ -453,15 +453,14 @@ fn find_method_insertion_point(ctx: &RefactorContext) -> Position {
         }
 
         // For Python, look for dedent
-        if ctx.language == LanguageId::Python && in_function {
-            if i > current_line && !trimmed.is_empty() {
+        if ctx.language == LanguageId::Python && in_function
+            && i > current_line && !trimmed.is_empty() {
                 let indent_level = line.len() - line.trim_start().len();
                 let base_indent = lines[current_line].len() - lines[current_line].trim_start().len();
                 if indent_level <= base_indent {
                     return Position::new(i as u32, 0);
                 }
             }
-        }
     }
 
     // Default: end of file

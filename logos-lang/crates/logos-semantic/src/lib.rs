@@ -67,7 +67,9 @@ impl SemanticAnalyzer {
         let mut seen: HashMap<(&str, SymbolKind), Range> = HashMap::new();
         for symbol in symbols {
             let key = (symbol.name.as_str(), symbol.kind);
-            if seen.contains_key(&key) {
+            if let std::collections::hash_map::Entry::Vacant(e) = seen.entry(key) {
+                e.insert(symbol.selection_range);
+            } else {
                 diagnostics.push(
                     Diagnostic::warning(
                         symbol.selection_range,
@@ -75,8 +77,6 @@ impl SemanticAnalyzer {
                     )
                     .with_source("logos-semantic".to_string()),
                 );
-            } else {
-                seen.insert(key, symbol.selection_range);
             }
             self.check_duplicates(&symbol.children, diagnostics);
         }

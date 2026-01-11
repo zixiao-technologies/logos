@@ -19,6 +19,12 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct SymbolId(pub u64);
 
+impl Default for SymbolId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SymbolId {
     pub fn new() -> Self {
         static COUNTER: AtomicU64 = AtomicU64::new(1);
@@ -28,8 +34,10 @@ impl SymbolId {
 
 /// Visibility of a symbol
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Visibility {
     /// Public - accessible from anywhere
+    #[default]
     Public,
     /// Protected - accessible from subclasses
     Protected,
@@ -39,11 +47,6 @@ pub enum Visibility {
     Internal,
 }
 
-impl Default for Visibility {
-    fn default() -> Self {
-        Self::Public
-    }
-}
 
 /// Type information for a symbol
 #[derive(Debug, Clone, Serialize, Deserialize)]

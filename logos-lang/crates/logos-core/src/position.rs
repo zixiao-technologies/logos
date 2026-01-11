@@ -44,6 +44,7 @@ impl Ord for Position {
 
 /// A range in a text document
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Range {
     /// Start position (inclusive)
     pub start: Position,
@@ -87,14 +88,6 @@ impl Range {
     }
 }
 
-impl Default for Range {
-    fn default() -> Self {
-        Self {
-            start: Position::zero(),
-            end: Position::zero(),
-        }
-    }
-}
 
 /// A location in a document (URI + Range)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]

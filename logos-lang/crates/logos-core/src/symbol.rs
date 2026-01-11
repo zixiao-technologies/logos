@@ -139,8 +139,10 @@ impl SymbolInformation {
 
 /// Scope for symbol visibility
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Scope {
     /// Global/module scope
+    #[default]
     Global,
     /// Class/struct scope
     Class(String),
@@ -150,8 +152,3 @@ pub enum Scope {
     Block(u32),
 }
 
-impl Default for Scope {
-    fn default() -> Self {
-        Self::Global
-    }
-}

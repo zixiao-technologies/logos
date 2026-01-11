@@ -104,7 +104,7 @@ pub trait LanguageAdapter: Send + Sync {
     /// Check if this adapter can handle the given file
     fn can_handle(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-            self.file_extensions().iter().any(|e| *e == ext)
+            self.file_extensions().contains(&ext)
         } else {
             false
         }

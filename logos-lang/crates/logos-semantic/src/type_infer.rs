@@ -6,8 +6,10 @@ use std::collections::HashMap;
 /// Represents a type in the type system
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value")]
+#[derive(Default)]
 pub enum Type {
     /// Unknown type (any)
+    #[default]
     Unknown,
     /// Void/None/Unit type
     Void,
@@ -220,11 +222,6 @@ impl Type {
     }
 }
 
-impl Default for Type {
-    fn default() -> Self {
-        Type::Unknown
-    }
-}
 
 /// Type context for tracking variable bindings and scopes
 #[derive(Debug, Default, Clone)]

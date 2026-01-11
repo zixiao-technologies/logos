@@ -44,9 +44,7 @@ impl Server {
         let response = self.dispatch(&request);
 
         // If this was a notification (no id), don't send a response
-        if request.id.is_none() {
-            return None;
-        }
+        request.id.as_ref()?;
 
         Some(serde_json::to_string(&response).unwrap())
     }

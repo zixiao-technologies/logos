@@ -165,8 +165,8 @@ impl ProjectIndexer {
 
             if path.is_dir() {
                 self.index_directory_recursive(&path, stats)?;
-            } else if path.is_file() {
-                if self.find_adapter(&path).is_some() {
+            } else if path.is_file()
+                && self.find_adapter(&path).is_some() {
                     match self.index_file(&path) {
                         Ok(result) => {
                             stats.files_indexed += 1;
@@ -181,7 +181,6 @@ impl ProjectIndexer {
                         }
                     }
                 }
-            }
         }
 
         Ok(())

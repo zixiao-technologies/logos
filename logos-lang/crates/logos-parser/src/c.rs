@@ -172,7 +172,7 @@ fn extract_enum_values(node: &Node, source: &str, symbols: &mut Vec<Symbol>) {
     }
 }
 
-fn get_node_text<'a>(node: &Node, source: &'a str) -> String {
+fn get_node_text(node: &Node, source: &str) -> String {
     source[node.byte_range()].to_string()
 }
 
