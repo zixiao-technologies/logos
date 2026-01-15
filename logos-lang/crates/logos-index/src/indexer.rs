@@ -3,6 +3,7 @@
 //! Coordinates language adapters and the project index to index entire projects.
 
 use crate::adapter::{AnalysisResult, LanguageAdapter};
+use crate::python_adapter::PythonAdapter;
 use crate::symbol_table::{CallSite, CallType, ProjectIndex};
 use crate::typescript_adapter::TypeScriptAdapter;
 use std::fs;
@@ -27,6 +28,9 @@ impl ProjectIndexer {
         // Register built-in adapters
         if let Ok(ts_adapter) = TypeScriptAdapter::new() {
             indexer.register_adapter(Box::new(ts_adapter));
+        }
+        if let Ok(py_adapter) = PythonAdapter::new() {
+            indexer.register_adapter(Box::new(py_adapter));
         }
 
         indexer

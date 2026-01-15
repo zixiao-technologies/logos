@@ -228,3 +228,73 @@ pub struct ExtractMethodParams {
     pub range: Range,
     pub method_name: String,
 }
+
+// Call hierarchy types (LSP 3.16+)
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyPrepareParams {
+    pub text_document: TextDocumentIdentifier,
+    pub position: Position,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyItem {
+    pub name: String,
+    pub kind: i32, // SymbolKind
+    pub detail: Option<String>,
+    pub uri: String,
+    pub range: SerializableRange,
+    pub selection_range: SerializableRange,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerializableRange {
+    pub start: SerializablePosition,
+    pub end: SerializablePosition,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SerializablePosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyIncomingCallsParams {
+    pub item: CallHierarchyItem,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyOutgoingCallsParams {
+    pub item: CallHierarchyItem,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyIncomingCall {
+    pub from: CallHierarchyItem,
+    pub from_ranges: Vec<SerializableRange>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallHierarchyOutgoingCall {
+    pub to: CallHierarchyItem,
+    pub from_ranges: Vec<SerializableRange>,
+}
+
+// Mode switching
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetModeParams {
+    pub mode: String, // "basic" | "smart"
+}

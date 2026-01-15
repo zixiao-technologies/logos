@@ -149,6 +149,28 @@ impl Server {
                 handlers::analysis::get_unused_symbols(&self.state, &request.params, id)
             }
 
+            // Call Hierarchy (Smart mode)
+            "textDocument/prepareCallHierarchy" => {
+                handlers::call_hierarchy::handle_prepare(&self.state, &request.params, id)
+            }
+            "callHierarchy/incomingCalls" => {
+                handlers::call_hierarchy::handle_incoming_calls(&self.state, &request.params, id)
+            }
+            "callHierarchy/outgoingCalls" => {
+                handlers::call_hierarchy::handle_outgoing_calls(&self.state, &request.params, id)
+            }
+
+            // Mode switching
+            "logos/setMode" => {
+                handlers::mode::handle_set_mode(&mut self.state, &request.params, id)
+            }
+            "logos/getMode" => {
+                handlers::mode::handle_get_mode(&self.state, &request.params, id)
+            }
+            "logos/getIndexStats" => {
+                handlers::mode::handle_get_index_stats(&self.state, &request.params, id)
+            }
+
             // Unknown method
             _ => {
                 warn!("Method not found: {}", request.method);

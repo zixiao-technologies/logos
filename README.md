@@ -83,6 +83,13 @@ paru -S logos-bin
 # winget install Zixiao.Logos
 ```
 
+## macOS issue resove
+
+```bash
+xattr -cr /Applications/Logos.app 
+
+```
+
 ## Screenshots
 
 <div align="center">

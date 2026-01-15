@@ -394,6 +394,16 @@ impl CallGraph {
             entry.retain(|call| call.location.uri != file_uri);
         }
     }
+
+    /// Get the total number of call sites
+    pub fn len(&self) -> usize {
+        self.callers.iter().map(|e| e.len()).sum()
+    }
+
+    /// Check if empty
+    pub fn is_empty(&self) -> bool {
+        self.callers.is_empty()
+    }
 }
 
 impl Default for CallGraph {
@@ -573,6 +583,11 @@ impl DependencyGraph {
 
         // Remove exports
         self.exports.remove(file);
+    }
+
+    /// Get the number of indexed files
+    pub fn file_count(&self) -> usize {
+        self.exports.len()
     }
 }
 

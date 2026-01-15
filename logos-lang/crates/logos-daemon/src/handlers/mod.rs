@@ -11,3 +11,5 @@ pub mod rename;
 pub mod diagnostics;
 pub mod refactor;
 pub mod analysis;
+pub mod call_hierarchy;
+pub mod mode;

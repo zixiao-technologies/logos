@@ -5,6 +5,7 @@ pub mod comments;
 pub mod incremental;
 pub mod indexer;
 pub mod inverted;
+pub mod python_adapter;
 pub mod symbol_table;
 pub mod typescript_adapter;
 
@@ -14,6 +15,7 @@ pub use adapter::{
 };
 pub use comments::{CommentScanner, ScannerConfig, TodoIndex, TodoItem, TodoKind};
 pub use indexer::{IndexingStats, ProjectIndexer};
+pub use python_adapter::PythonAdapter;
 pub use symbol_table::{
     Attribute, CallGraph, CallSite, CallType, DependencyGraph, ProjectIndex, SmartSymbol, SymbolId,
     SymbolLocation, SymbolReference, SymbolTable, TypeHierarchy, TypeInfo, Visibility,
