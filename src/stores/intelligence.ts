@@ -216,6 +216,22 @@ export const useIntelligenceStore = defineStore('intelligence', {
 
         this.mode = mode
 
+        // 保存设置到 localStorage (持久化)
+        if (typeof window !== 'undefined' && window.localStorage) {
+          try {
+            const settingsKey = 'lsp-ide-settings'
+            const savedSettings = localStorage.getItem(settingsKey)
+            if (savedSettings) {
+              const settings = JSON.parse(savedSettings)
+              if (!settings.lsp) settings.lsp = {}
+              settings.lsp.mode = mode
+              localStorage.setItem(settingsKey, JSON.stringify(settings))
+            }
+          } catch (error) {
+            console.error('Failed to persist intelligence mode:', error)
+          }
+        }
+
         // Smart Mode 开始时重置索引进度
         if (mode === 'smart') {
           this.indexingProgress = { ...DEFAULT_INDEXING_PROGRESS }

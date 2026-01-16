@@ -1037,7 +1037,49 @@ contextBridge.exposeInMainWorld('electronAPI', {
       hasComplexDependencies: boolean
       languages: string[]
     }> =>
-      ipcRenderer.invoke('intelligence:analyzeProject')
+      ipcRenderer.invoke('intelligence:analyzeProject'),
+
+    // ============ 项目设置 ============
+    getProjectSettings: (projectRoot: string): Promise<{
+      preferredMode?: 'basic' | 'smart'
+      autoSelect?: boolean
+      smartModeThreshold?: {
+        maxFiles?: number
+        maxMemoryMB?: number
+      }
+      autoDowngrade?: boolean
+    }> =>
+      ipcRenderer.invoke('intelligence:getProjectSettings', projectRoot),
+
+    saveProjectSettings: (projectRoot: string, settings: {
+      preferredMode?: 'basic' | 'smart'
+      autoSelect?: boolean
+      smartModeThreshold?: {
+        maxFiles?: number
+        maxMemoryMB?: number
+      }
+      autoDowngrade?: boolean
+    }): Promise<void> =>
+      ipcRenderer.invoke('intelligence:saveProjectSettings', projectRoot, settings),
+
+    loadMergedSettings: (projectRoot: string, globalSettings: {
+      preferredMode?: 'basic' | 'smart'
+      autoSelect?: boolean
+      smartModeThreshold?: {
+        maxFiles?: number
+        maxMemoryMB?: number
+      }
+      autoDowngrade?: boolean
+    }): Promise<{
+      preferredMode?: 'basic' | 'smart'
+      autoSelect?: boolean
+      smartModeThreshold?: {
+        maxFiles?: number
+        maxMemoryMB?: number
+      }
+      autoDowngrade?: boolean
+    }> =>
+      ipcRenderer.invoke('intelligence:loadMergedSettings', projectRoot, globalSettings)
   },
 
   // ============ 调试操作 ============
@@ -1851,6 +1893,43 @@ declare global {
           estimatedMemory: number
           hasComplexDependencies: boolean
           languages: string[]
+        }>
+
+        // 项目设置
+        getProjectSettings: (projectRoot: string) => Promise<{
+          preferredMode?: 'basic' | 'smart'
+          autoSelect?: boolean
+          smartModeThreshold?: {
+            maxFiles?: number
+            maxMemoryMB?: number
+          }
+          autoDowngrade?: boolean
+        }>
+        saveProjectSettings: (projectRoot: string, settings: {
+          preferredMode?: 'basic' | 'smart'
+          autoSelect?: boolean
+          smartModeThreshold?: {
+            maxFiles?: number
+            maxMemoryMB?: number
+          }
+          autoDowngrade?: boolean
+        }) => Promise<void>
+        loadMergedSettings: (projectRoot: string, globalSettings: {
+          preferredMode?: 'basic' | 'smart'
+          autoSelect?: boolean
+          smartModeThreshold?: {
+            maxFiles?: number
+            maxMemoryMB?: number
+          }
+          autoDowngrade?: boolean
+        }) => Promise<{
+          preferredMode?: 'basic' | 'smart'
+          autoSelect?: boolean
+          smartModeThreshold?: {
+            maxFiles?: number
+            maxMemoryMB?: number
+          }
+          autoDowngrade?: boolean
         }>
       }
 

@@ -46,6 +46,12 @@ Logos IDE 支持两种代码智能模式，用户可以根据需求和场景在�
 │                                 │
 ├─────────────────────────────────┤
 │ ⚙ Auto-select based on project │
+│                                 │
+│ Project Analysis:               │
+│ Files: 1,234                    │
+│ Est. Memory: 256MB              │
+│ Languages: TypeScript, Python   │
+│ → Small project - Basic Mode    │
 └─────────────────────────────────┘
 ```
 
@@ -386,6 +392,170 @@ intelligenceManager.onIndexingComplete(() => {
 
 ## 设置持久化
 
+### 自动保存模式
+
+模式切换会自动保存到 localStorage，包括：
+- 当前选择的模式（Basic/Smart）
+- 自动选择开关状态
+- Smart Mode 阈值配置
+
+```typescript
+// 在 intelligence store 的 setMode 方法中自动持久化
+async setMode(mode: IntelligenceMode) {
+  // ... 切换逻辑 ...
+
+  // 保存设置到 localStorage
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const settingsKey = 'lsp-ide-settings'
+      const savedSettings = localStorage.getItem(settingsKey)
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings)
+        if (!settings.lsp) settings.lsp = {}
+        settings.lsp.mode = mode
+        localStorage.setItem(settingsKey, JSON.stringify(settings))
+      }
+    } catch (error) {
+      console.error('Failed to persist intelligence mode:', error)
+    }
+  }
+}
+```
+
+### 应用启动时恢复
+
+应用启动时会自动恢复上次的模式设置：
+
+```typescript
+// src/App.vue - onMounted
+onMounted(async () => {
+  // 从设置初始化智能模式
+  await intelligenceStore.initFromSettings(settingsStore.lspMode)
+  // ...
+})
+```
+
+### 首次启动对话框
+
+首次启动时显示 LSP 设置对话框，用户选择的模式会立即生效：
+
+```typescript
+// src/components/LSPSetupDialog.vue
+const handleConfirm = async () => {
+  // 保存设置
+  settingsStore.setLSPMode(selectedMode.value)
+  // 立即应用模式（同步到 intelligence store）
+  await intelligenceStore.setMode(selectedMode.value)
+  settingsStore.dismissLSPSetup()
+}
+```
+
+对话框 UI 优化特性：
+- 增强背景色对比度，使用不透明的 surface 颜色
+- 模式卡片有明显的边框和阴影效果
+- 改进文本可读性和间距
+- 代码示例带边框，易于辨认
+
+## 项目分析与自动切换
+
+### 项目分析
+
+打开项目时自动分析项目规模：
+
+```typescript
+// src/views/EditorView.vue
+if (fileExplorerStore.rootPath) {
+  await intelligenceManager.openProject(fileExplorerStore.rootPath)
+
+  // 分析项目并根据 autoSelect 决定是否自动切换模式
+  if (intelligenceStore.autoSelect) {
+    await intelligenceStore.autoDetectMode()
+  } else {
+    // 即使不自动切换，也分析项目以显示信息
+    await intelligenceStore.analyzeProject()
+  }
+}
+```
+
+### 自动切换规则
+
+```typescript
+async autoDetectMode() {
+  const analysis = await this.analyzeProject()
+  this.projectAnalysis = analysis
+
+  if (
+    analysis.fileCount > this.smartModeThreshold.maxFiles ||
+    analysis.estimatedMemory > this.smartModeThreshold.maxMemoryMB
+  ) {
+    // 大型项目默认使用 Basic（超过 5000 文件或 2048MB）
+    await this.setMode('basic')
+  } else if (analysis.hasComplexDependencies) {
+    // 复杂依赖关系的项目使用 Smart
+    await this.setMode('smart')
+  } else {
+    // 默认使用 Basic (快速启动)
+    await this.setMode('basic')
+  }
+}
+```
+
+### 项目分析信息显示
+
+状态栏模式指示器菜单中会显示项目分析结果：
+
+```typescript
+// src/components/StatusBar/IntelligenceModeIndicator.vue
+const getRecommendation = () => {
+  const analysis = intelligenceStore.projectAnalysis
+  if (!analysis) return ''
+
+  if (analysis.fileCount > intelligenceStore.smartModeThreshold.maxFiles) {
+    return `Large project (${analysis.fileCount} files) - Basic Mode recommended`
+  }
+  if (analysis.estimatedMemory > intelligenceStore.smartModeThreshold.maxMemoryMB) {
+    return `High memory usage (${analysis.estimatedMemory}MB) - Basic Mode recommended`
+  }
+  if (analysis.hasComplexDependencies) {
+    return 'Complex dependencies detected - Smart Mode recommended'
+  }
+  return 'Small project - Basic Mode for fast startup'
+}
+```
+
+## Monaco 编辑器诊断优化
+
+### 禁用内置 TypeScript 诊断
+
+为避免 Monaco 内置诊断与 LSP/Smart Mode 诊断冲突，在编辑器初始化时禁用内置检查：
+
+```typescript
+// src/views/EditorView.vue - initEditor()
+function initEditor() {
+  // 禁用 Monaco 内置的 TypeScript 诊断（避免与 LSP/Smart Mode 冲突）
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+    noSuggestionDiagnostics: true
+  })
+
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+    noSuggestionDiagnostics: true
+  })
+
+  // ... 其余初始化代码
+}
+```
+
+这样可以确保：
+- 只显示来自 LSP/Smart Mode 的诊断信息
+- 避免重复或冲突的错误提示
+- 语法高亮红线与实际分析结果一致
+
+## 设置持久化
+
 ```typescript
 // 保存用户偏好
 interface IntelligenceSettings {
@@ -462,10 +632,14 @@ registerCommand('intelligence.toggleMode', async () => {
 - [x] 内存压力监控 (`electron/services/memoryMonitorService.ts`)
 - [x] 自动模式选择 (`src/stores/intelligence.ts` - handleAutoDowngrade)
 
-### Phase 4: 设置与持久化
+### Phase 4: 设置与持久化 ✅
 - [x] 用户偏好设置 (通过 settingsStore.lspMode)
-- [ ] 项目级别设置
+- [x] 自动保存模式切换到 localStorage
+- [x] 应用启动时自动恢复上次模式
 - [x] LSP 设置对话框 (`src/components/LSPSetupDialog.vue`)
+- [x] 项目分析信息展示
+- [x] UI 可读性优化
+- [x] 项目级别设置 (`electron/services/projectSettingsService.ts`)
 
 ## 已实现的组件
 

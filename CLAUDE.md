@@ -50,6 +50,8 @@ npm run build
 | File System | `fileService.ts` | File/directory operations, file watching |
 | Git | `gitService.ts` | Git operations via CLI wrappers |
 | Terminal | `terminalService.ts` | PTY management with node-pty |
+| Intelligence | `intelligenceService.ts` | Code intelligence mode switching, project analysis |
+| Memory Monitor | `memoryMonitorService.ts` | Memory pressure monitoring, auto-downgrade |
 
 ### Frontend State (`src/stores/`)
 
@@ -61,6 +63,8 @@ npm run build
 | `terminal` | Terminal session state |
 | `theme` | Light/dark mode toggle |
 | `devops` | CI/CD dashboard state |
+| `intelligence` | Smart Mode state, indexing progress, project analysis |
+| `settings` | User preferences, LSP mode, telemetry settings |
 
 ### Key UI Components
 
@@ -113,3 +117,77 @@ import '@mdui/icons/folder.js'
 ## Path Alias
 
 `@/` maps to `src/` (configured in both `tsconfig.json` and `vite.config.ts`).
+## Code Intelligence System
+
+### Intelligence Modes
+
+Logos supports two code intelligence modes:
+
+| Mode | Provider | Features | Use Case |
+|------|----------|----------|----------|
+| **Basic** | Standard LSP | Completions, definitions, references, hover | Fast startup, low memory, large projects |
+| **Smart** | Rust daemon + full indexing | All Basic features + call hierarchy, impact analysis, safe refactoring | Advanced development, refactoring |
+
+### Mode Switching
+
+**Status Bar Indicator**: Click the mode indicator (Basic/Smart) in the status bar to toggle modes.
+
+**Automatic Mode Selection**: Enable "Auto-select based on project" to let the IDE choose the best mode based on:
+- Project size (files > 5000 → Basic Mode)
+- Memory requirements (> 2048MB → Basic Mode)
+- Dependency complexity (complex → Smart Mode)
+- Default for small projects → Basic Mode
+
+**Keyboard Shortcuts**:
+- `Ctrl/Cmd + Shift + I`: Toggle between modes
+- `Ctrl/Cmd + Shift + B`: Switch to Basic Mode
+- `Ctrl/Cmd + Shift + M`: Switch to Smart Mode
+
+### Settings Persistence
+
+Mode preferences are automatically saved to localStorage and restored on app startup:
+- Selected mode (Basic/Smart)
+- Auto-select preference
+- Smart Mode thresholds
+
+First-time users see an LSP setup dialog that immediately applies their choice.
+
+### Project Analysis
+
+When opening a project, the system analyzes:
+- File count
+- Estimated memory usage
+- Detected languages
+- Dependency complexity
+
+This information is displayed in the mode indicator menu with a recommendation.
+
+### Monaco Editor Configuration
+
+Monaco's built-in TypeScript diagnostics are disabled to prevent conflicts with LSP/Smart Mode:
+
+```typescript
+monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+  noSemanticValidation: true,
+  noSyntaxValidation: true,
+  noSuggestionDiagnostics: true
+})
+```
+
+This ensures only LSP/Smart Mode diagnostics are shown, maintaining consistency between syntax highlighting and analysis results.
+
+### Key Files
+
+**Frontend**:
+- `src/stores/intelligence.ts` - Intelligence mode state management
+- `src/components/StatusBar/IntelligenceModeIndicator.vue` - Mode indicator UI
+- `src/components/LSPSetupDialog.vue` - First-time setup dialog
+- `src/services/lsp/IntelligenceManager.ts` - Mode coordination
+
+**Backend**:
+- `electron/services/intelligenceService.ts` - IPC handlers for mode switching
+- `electron/services/memoryMonitorService.ts` - Memory pressure monitoring
+
+**Documentation**:
+- `docs/design/mode-switching.md` - Mode switching design
+- `docs/design/phase2-smart-mode.md` - Smart Mode implementation details

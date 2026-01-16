@@ -83,6 +83,29 @@
             <mdui-icon-check-box-outline-blank v-else class="checkbox-icon"></mdui-icon-check-box-outline-blank>
           </div>
 
+          <!-- 项目分析信息 (显示自动模式的决策依据) -->
+          <div v-if="intelligenceStore.projectAnalysis" class="project-analysis">
+            <div class="analysis-title">Project Analysis</div>
+            <div class="analysis-stats">
+              <div class="stat-item">
+                <span class="stat-label">Files:</span>
+                <span class="stat-value">{{ intelligenceStore.projectAnalysis.fileCount.toLocaleString() }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Est. Memory:</span>
+                <span class="stat-value">{{ intelligenceStore.projectAnalysis.estimatedMemory }}MB</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">Languages:</span>
+                <span class="stat-value">{{ intelligenceStore.projectAnalysis.languages.join(', ') || 'N/A' }}</span>
+              </div>
+            </div>
+            <div v-if="intelligenceStore.autoSelect" class="analysis-recommendation">
+              <mdui-icon-info class="info-icon"></mdui-icon-info>
+              <span>{{ getRecommendation() }}</span>
+            </div>
+          </div>
+
           <!-- 索引状态 (Smart Mode) -->
           <div v-if="intelligenceStore.isSmartMode && intelligenceStore.indexingProgress" class="indexing-info">
             <div class="indexing-phase">
@@ -112,6 +135,7 @@ import '@mdui/icons/check.js'
 import '@mdui/icons/check-box.js'
 import '@mdui/icons/check-box-outline-blank.js'
 import '@mdui/icons/auto-fix-high.js'
+import '@mdui/icons/info.js'
 
 const intelligenceStore = useIntelligenceStore()
 
@@ -176,6 +200,23 @@ const truncateFilePath = (filePath: string) => {
     return `.../${parts.slice(-2).join('/')}`
   }
   return `...${filePath.slice(-maxLength)}`
+}
+
+/** 获取自动模式推荐说明 */
+const getRecommendation = () => {
+  const analysis = intelligenceStore.projectAnalysis
+  if (!analysis) return ''
+
+  if (analysis.fileCount > intelligenceStore.smartModeThreshold.maxFiles) {
+    return `Large project (${analysis.fileCount} files) - Basic Mode recommended`
+  }
+  if (analysis.estimatedMemory > intelligenceStore.smartModeThreshold.maxMemoryMB) {
+    return `High memory usage (${analysis.estimatedMemory}MB) - Basic Mode recommended`
+  }
+  if (analysis.hasComplexDependencies) {
+    return 'Complex dependencies detected - Smart Mode recommended'
+  }
+  return 'Small project - Basic Mode for fast startup'
 }
 
 /** 点击外部关闭菜单 */
@@ -378,6 +419,61 @@ onUnmounted(() => {
 .indexing-stats {
   font-size: 11px;
   color: var(--mdui-color-on-surface-variant);
+}
+
+/* 项目分析信息样式 */
+.project-analysis {
+  padding: 12px;
+  background: var(--mdui-color-surface-container);
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.analysis-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--mdui-color-on-surface);
+  margin-bottom: 8px;
+}
+
+.analysis-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.stat-label {
+  color: var(--mdui-color-on-surface-variant);
+  font-weight: 500;
+}
+
+.stat-value {
+  color: var(--mdui-color-on-surface);
+  font-family: monospace;
+}
+
+.analysis-recommendation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px;
+  background: var(--mdui-color-primary-container);
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--mdui-color-on-primary-container);
+  line-height: 1.4;
+}
+
+.info-icon {
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* 菜单动画 */

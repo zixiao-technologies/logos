@@ -6,6 +6,7 @@
 
 import { computed, ref } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
+import { useIntelligenceStore } from '@/stores/intelligence'
 
 // 导入图标
 import '@mdui/icons/code.js'
@@ -14,12 +15,16 @@ import '@mdui/icons/speed.js'
 import '@mdui/icons/memory.js'
 
 const settingsStore = useSettingsStore()
+const intelligenceStore = useIntelligenceStore()
 
 const showDialog = computed(() => settingsStore.shouldShowLSPSetup)
 const selectedMode = ref<'basic' | 'smart'>('basic')
 
-const handleConfirm = () => {
+const handleConfirm = async () => {
+  // 保存设置
   settingsStore.setLSPMode(selectedMode.value)
+  // 立即应用模式（同步到 intelligence store）
+  await intelligenceStore.setMode(selectedMode.value)
   settingsStore.dismissLSPSetup()
 }
 
@@ -120,12 +125,23 @@ const handleSkip = () => {
 </template>
 
 <style scoped>
+/* 增强对话框背景，提高可读性 */
+:deep(mdui-dialog) {
+  --mdui-color-surface: var(--mdui-color-surface-container-high);
+}
+
+:deep(.mdui-dialog) {
+  background-color: var(--mdui-color-surface-container-high) !important;
+}
+
 .setup-content {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
   padding: 8px 0;
+  background-color: var(--mdui-color-surface-container);
+  border-radius: 8px;
 }
 
 .setup-icon {
@@ -139,6 +155,7 @@ const handleSkip = () => {
 
 .setup-body {
   width: 100%;
+  padding: 0 8px;
 }
 
 .setup-intro {
@@ -146,6 +163,7 @@ const handleSkip = () => {
   line-height: 1.6;
   margin-bottom: 16px;
   text-align: center;
+  color: var(--mdui-color-on-surface);
 }
 
 .mode-options {
@@ -156,8 +174,8 @@ const handleSkip = () => {
 
 .mode-card {
   flex: 1;
-  background: var(--mdui-color-surface-container);
-  border: 2px solid transparent;
+  background: var(--mdui-color-surface-container-low);
+  border: 2px solid var(--mdui-color-outline-variant);
   border-radius: 12px;
   padding: 16px;
   cursor: pointer;
@@ -166,11 +184,13 @@ const handleSkip = () => {
 
 .mode-card:hover {
   border-color: var(--mdui-color-outline);
+  background: var(--mdui-color-surface-container);
 }
 
 .mode-card.selected {
   border-color: var(--mdui-color-primary);
-  background: var(--mdui-color-surface-container-high);
+  background: var(--mdui-color-surface-container-highest);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .mode-header {
@@ -190,6 +210,7 @@ const handleSkip = () => {
   font-weight: 600;
   font-size: 1rem;
   flex: 1;
+  color: var(--mdui-color-on-surface);
 }
 
 .check-icon {
@@ -201,6 +222,7 @@ const handleSkip = () => {
   font-size: 0.875rem;
   color: var(--mdui-color-on-surface-variant);
   margin: 0 0 12px 0;
+  line-height: 1.4;
 }
 
 .mode-features {
@@ -216,13 +238,15 @@ const handleSkip = () => {
 
 .mode-note {
   font-size: 0.75rem;
-  color: var(--mdui-color-outline);
+  color: var(--mdui-color-on-surface-variant);
   margin: 0;
   font-style: italic;
+  opacity: 0.8;
 }
 
 .lsp-servers {
-  background: var(--mdui-color-surface-container);
+  background: var(--mdui-color-surface-container-low);
+  border: 1px solid var(--mdui-color-outline-variant);
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;
@@ -244,10 +268,11 @@ const handleSkip = () => {
 .server-list code {
   font-size: 0.75rem;
   background: var(--mdui-color-surface);
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: 4px;
   font-family: 'Fira Code', 'SF Mono', Monaco, monospace;
-  color: var(--mdui-color-on-surface-variant);
+  color: var(--mdui-color-on-surface);
+  border: 1px solid var(--mdui-color-outline-variant);
 }
 
 .setup-note {
@@ -255,5 +280,6 @@ const handleSkip = () => {
   color: var(--mdui-color-on-surface-variant);
   text-align: center;
   margin: 0;
+  line-height: 1.5;
 }
 </style>

@@ -34,6 +34,17 @@ Logos is a modern, lightweight code editor built with Electron and Vue 3. It fea
 - **Minimap** - Navigate large files easily
 - **Multiple themes** - Light and dark themes included
 
+### Code Intelligence
+- **Dual Intelligence Mode** - Switch between Basic and Smart modes
+  - **Basic Mode** - Standard LSP servers, fast startup, low memory
+  - **Smart Mode** - Full project indexing, advanced refactoring, call hierarchy
+- **Auto Mode Selection** - Automatically choose the best mode based on project size
+- **Project Analysis** - Real-time metrics on file count, memory usage, and languages
+- **LSP Support** - TypeScript, JavaScript, Python, Go, Rust, C/C++, Java
+- **Call Hierarchy** - Trace function calls up and down the call stack
+- **Impact Analysis** - Understand the consequences of code changes
+- **Persistent Settings** - Your mode preference is automatically saved
+
 ### File Explorer
 - **Single-click open** - VS Code-style file opening
 - **File icons** - Beautiful file type icons

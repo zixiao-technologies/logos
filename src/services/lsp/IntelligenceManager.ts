@@ -15,6 +15,7 @@ import { HoverProvider } from './providers/HoverProvider'
 import { SignatureHelpProvider } from './providers/SignatureHelpProvider'
 import { RenameProvider } from './providers/RenameProvider'
 import { InlayHintsProvider } from './providers/InlayHintsProvider'
+import { RefactorCodeActionProvider } from './providers/RefactorCodeActionProvider'
 import { registerLSPProviders } from './providers/LSPProviders'
 import { DiagnosticsManager } from './DiagnosticsManager'
 import { getLSPClientService, destroyLSPClientService } from './LSPClientService'
@@ -307,6 +308,16 @@ export class IntelligenceManager {
         new RenameProvider(mode)
       )
     )
+
+    // Code Action Provider for Refactoring (仅 Smart Mode 的 daemon 语言支持)
+    if (mode === 'daemon') {
+      this.disposables.push(
+        monaco.languages.registerCodeActionProvider(
+          languageId,
+          new RefactorCodeActionProvider()
+        )
+      )
+    }
 
     // 内联提示 Provider (仅 IPC 模式支持)
     if (mode === 'ipc') {

@@ -9,6 +9,7 @@ import * as ts from 'typescript'
 import * as path from 'path'
 import * as fs from 'fs'
 import { getLanguageDaemonService } from './languageDaemonService'
+import { projectSettingsService, type ProjectIntelligenceSettings } from './projectSettingsService'
 
 // ============ 语言配置 ============
 
@@ -1316,6 +1317,39 @@ export function registerIntelligenceHandlers(getMainWindow: () => BrowserWindow 
         hasComplexDependencies: false,
         languages: []
       }
+    }
+  })
+
+  // ============ 项目设置管理 ============
+
+  // 获取项目的智能模式设置
+  ipcMain.handle('intelligence:getProjectSettings', async (_, projectRoot: string) => {
+    try {
+      return await projectSettingsService.getIntelligenceSettings(projectRoot)
+    } catch (error) {
+      console.error('[Intelligence] Failed to get project settings:', error)
+      return {}
+    }
+  })
+
+  // 保存项目的智能模式设置
+  ipcMain.handle('intelligence:saveProjectSettings', async (_, projectRoot: string, settings: ProjectIntelligenceSettings) => {
+    try {
+      await projectSettingsService.updateIntelligenceSettings(projectRoot, settings)
+    } catch (error) {
+      console.error('[Intelligence] Failed to save project settings:', error)
+      throw error
+    }
+  })
+
+  // 加载项目设置并与全局设置合并
+  ipcMain.handle('intelligence:loadMergedSettings', async (_, projectRoot: string, globalSettings: ProjectIntelligenceSettings) => {
+    try {
+      const projectSettings = await projectSettingsService.getIntelligenceSettings(projectRoot)
+      return projectSettingsService.mergeWithGlobalSettings(projectSettings, globalSettings)
+    } catch (error) {
+      console.error('[Intelligence] Failed to load merged settings:', error)
+      return globalSettings // 出错时返回全局设置
     }
   })
 }

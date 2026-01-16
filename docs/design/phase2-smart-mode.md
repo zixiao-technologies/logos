@@ -561,11 +561,20 @@ pub struct TreeSitterAdapter {
 - [x] 调用链追踪 UI (`src/components/Intelligence/CallHierarchyPanel.vue`)
 - [x] 影响分析 UI (`src/components/Intelligence/ImpactAnalysisPanel.vue`)
 
-### Phase 2.4: 高级重构
-- [ ] 安全重命名
-- [ ] 提取方法/变量
-- [ ] 移动符号
-- [ ] 内联
+### Phase 2.4: 高级重构 & 用户体验优化 🔄
+- [x] 设置持久化（自动保存/恢复模式）
+- [x] 项目规模分析与自动模式切换
+- [x] 项目分析信息展示（文件数、内存、语言）
+- [x] LSP 设置对话框首次设置生效修复
+- [x] 对话框 UI 可读性优化
+- [x] Monaco 诊断与 LSP 冲突修复
+- [x] 项目级别设置支持 (`electron/services/projectSettingsService.ts`)
+- [x] CodeActionProvider for Refactoring (`src/services/lsp/providers/RefactorCodeActionProvider.ts`)
+- [x] Rust 后端重构 handlers (rename, extract_variable, extract_method, safe_delete)
+- [ ] 重构对话框 UI (输入新名称、显示冲突)
+- [ ] RefactorMenu 集成到 EditorView
+- [ ] 内联重构
+- [ ] 移动符号重构
 
 ### Phase 2.5: 更多语言
 - [x] Python 适配器 (`logos-index/src/python_adapter.rs`)
@@ -613,3 +622,137 @@ pub struct TreeSitterAdapter {
 | `services/intelligenceService.ts` | IPC 处理器，模式切换 |
 | `services/memoryMonitorService.ts` | 内存压力监控服务 |
 | `preload.ts` | setMode, analyzeProject, memory API |
+
+## 用户体验优化（2026-01 更新）
+
+### 设置持久化
+
+**自动保存模式**：每次切换模式时自动保存到 localStorage，下次启动时恢复。
+
+```typescript
+// src/stores/intelligence.ts - setMode()
+// 保存设置到 localStorage (持久化)
+if (typeof window !== 'undefined' && window.localStorage) {
+  try {
+    const settingsKey = 'lsp-ide-settings'
+    const savedSettings = localStorage.getItem(settingsKey)
+    if (savedSettings) {
+      const settings = JSON.parse(savedSettings)
+      if (!settings.lsp) settings.lsp = {}
+      settings.lsp.mode = mode
+      localStorage.setItem(settingsKey, JSON.stringify(settings))
+    }
+  } catch (error) {
+    console.error('Failed to persist intelligence mode:', error)
+  }
+}
+```
+
+**应用启动恢复**：
+
+```typescript
+// src/App.vue - onMounted
+await intelligenceStore.initFromSettings(settingsStore.lspMode)
+```
+
+### 项目分析与自动模式切换
+
+**项目规模分析**：
+
+```typescript
+// src/stores/intelligence.ts
+interface ProjectAnalysis {
+  fileCount: number          // 文件数量
+  totalSize: number          // 总大小 (bytes)
+  estimatedMemory: number    // 预估内存需求 (MB)
+  hasComplexDependencies: boolean  // 是否有复杂依赖
+  languages: string[]        // 检测到的语言
+}
+```
+
+**自动切换规则**：
+- 大型项目（>5000 文件或 >2048MB）→ Basic Mode
+- 复杂依赖项目 → Smart Mode
+- 小型项目 → Basic Mode（快速启动）
+
+**分析信息展示**：
+
+在状态栏模式指示器菜单中显示：
+- 文件数量
+- 预估内存需求
+- 检测到的语言
+- 推荐建议
+
+```typescript
+// src/components/StatusBar/IntelligenceModeIndicator.vue
+const getRecommendation = () => {
+  const analysis = intelligenceStore.projectAnalysis
+  if (!analysis) return ''
+
+  if (analysis.fileCount > intelligenceStore.smartModeThreshold.maxFiles) {
+    return `Large project (${analysis.fileCount} files) - Basic Mode recommended`
+  }
+  if (analysis.estimatedMemory > intelligenceStore.smartModeThreshold.maxMemoryMB) {
+    return `High memory usage (${analysis.estimatedMemory}MB) - Basic Mode recommended`
+  }
+  if (analysis.hasComplexDependencies) {
+    return 'Complex dependencies detected - Smart Mode recommended'
+  }
+  return 'Small project - Basic Mode for fast startup'
+}
+```
+
+### LSP 设置对话框优化
+
+**首次设置立即生效**：
+
+```typescript
+// src/components/LSPSetupDialog.vue
+const handleConfirm = async () => {
+  settingsStore.setLSPMode(selectedMode.value)
+  // 立即应用模式（同步到 intelligence store）
+  await intelligenceStore.setMode(selectedMode.value)
+  settingsStore.dismissLSPSetup()
+}
+```
+
+**UI 可读性改进**：
+- 增强背景色对比度（使用 `surface-container-low` 和 `surface-container-highest`）
+- 模式卡片明显边框（`border: 2px solid`）和阴影效果
+- 优化文本可读性（增加 line-height 和 opacity）
+- 代码示例边框样式（`border: 1px solid var(--mdui-color-outline-variant)`）
+
+### Monaco 编辑器诊断优化
+
+**禁用内置诊断**：
+
+```typescript
+// src/views/EditorView.vue - initEditor()
+monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+  noSemanticValidation: true,
+  noSyntaxValidation: true,
+  noSuggestionDiagnostics: true
+})
+
+monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+  noSemanticValidation: true,
+  noSyntaxValidation: true,
+  noSuggestionDiagnostics: true
+})
+```
+
+**效果**：
+- 只显示 LSP/Smart Mode 的诊断
+- 避免重复或冲突的错误提示
+- 语法高亮与实际分析结果一致
+
+### 使用方式
+
+1. **手动切换模式**：点击状态栏右侧的模式指示器（Smart/Basic），选择想要的模式
+2. **自动模式**：在模式菜单中勾选"Auto-select based on project"，系统会根据项目规模自动选择合适的模式
+3. **查看项目分析**：打开模式菜单，可以看到当前项目的文件数量、内存需求和推荐建议
+4. **快捷键**：
+   - `Ctrl/Cmd + Shift + I`：切换模式
+   - `Ctrl/Cmd + Shift + B`：切换到 Basic Mode
+   - `Ctrl/Cmd + Shift + M`：切换到 Smart Mode
+

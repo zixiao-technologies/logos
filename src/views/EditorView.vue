@@ -9,6 +9,7 @@ import * as monaco from 'monaco-editor'
 import { useEditorStore } from '@/stores/editor'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { useDebugStore, type BreakpointInfo } from '@/stores/debug'
+import { useIntelligenceStore } from '@/stores/intelligence'
 import { getIntelligenceManager, destroyIntelligenceManager } from '@/services/lsp'
 import { initializeMonacoLanguages } from '@/services/monaco/languageConfig'
 
@@ -23,6 +24,7 @@ import '@mdui/icons/insert-drive-file.js'
 const editorStore = useEditorStore()
 const fileExplorerStore = useFileExplorerStore()
 const debugStore = useDebugStore()
+const intelligenceStore = useIntelligenceStore()
 const editorContainer = ref<HTMLElement | null>(null)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 const models = new Map<string, monaco.editor.ITextModel>()
@@ -75,6 +77,19 @@ function disposeModel(path: string) {
 // 初始化编辑器
 function initEditor() {
   if (!editorContainer.value || editor) return
+
+  // 禁用 Monaco 内置的 TypeScript 诊断（避免与 LSP/Smart Mode 冲突）
+  monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+    noSuggestionDiagnostics: true
+  })
+
+  monaco.languages.typescript.javascriptDefaults.setDiagnosticsOptions({
+    noSemanticValidation: true,
+    noSyntaxValidation: true,
+    noSuggestionDiagnostics: true
+  })
 
   // 定义主题
   monaco.editor.defineTheme('lsp-dark', {
@@ -256,6 +271,14 @@ onMounted(async () => {
     // 设置调试工作区并加载配置
     debugStore.setWorkspaceFolder(fileExplorerStore.rootPath)
     await debugStore.loadLaunchConfigurations()
+
+    // 分析项目并根据 autoSelect 决定是否自动切换模式
+    if (intelligenceStore.autoSelect) {
+      await intelligenceStore.autoDetectMode()
+    } else {
+      // 即使不自动切换，也分析项目以显示信息
+      await intelligenceStore.analyzeProject()
+    }
   }
 })
 
@@ -347,6 +370,14 @@ watch(() => fileExplorerStore.rootPath, async (newPath, oldPath) => {
     // 更新调试工作区并加载配置
     debugStore.setWorkspaceFolder(newPath)
     await debugStore.loadLaunchConfigurations()
+
+    // 分析项目并根据 autoSelect 决定是否自动切换模式
+    if (intelligenceStore.autoSelect) {
+      await intelligenceStore.autoDetectMode()
+    } else {
+      // 即使不自动切换，也分析项目以显示信息
+      await intelligenceStore.analyzeProject()
+    }
   } else {
     debugStore.setWorkspaceFolder(null)
   }
