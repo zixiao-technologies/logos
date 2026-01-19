@@ -2,7 +2,7 @@
 
 # Logos
 
-<img src="docs/assets/Icon-iOS-Default-1024x1024@1x.png" alt="logos Logo" width="128" height="128">
+<img src="docs/assets/Logosicon-iOS-Default-1024x1024@1x.png alt="logos Logo" width="128" height="128">
 
 **A Modern, Lightweight Code Editor**
 
