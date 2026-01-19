@@ -90,6 +90,7 @@ release/
 /dist-electron/
 /resources/
 /dist-scripts/
+/coverage/
 
 # Sentry Config File
 .env.sentry-build-plugin
