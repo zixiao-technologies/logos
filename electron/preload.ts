@@ -888,7 +888,156 @@ contextBridge.exposeInMainWorld('electronAPI', {
       deletions: number
       filesChanged: number
     }> =>
-      ipcRenderer.invoke('git:getCommitStats', repoPath, commitHash)
+      ipcRenderer.invoke('git:getCommitStats', repoPath, commitHash),
+
+    // ============ Merge Conflict Resolution ============
+
+    // 获取合并状态
+    getMergeStatus: (repoPath: string): Promise<{
+      inMerge: boolean
+      mergeHead?: string
+      mergeMessage?: string
+      conflictCount: number
+      isRebaseConflict?: boolean
+    }> =>
+      ipcRenderer.invoke('git:getMergeStatus', repoPath),
+
+    // 检查是否有冲突
+    hasConflicts: (repoPath: string): Promise<boolean> =>
+      ipcRenderer.invoke('git:hasConflicts', repoPath),
+
+    // 获取冲突文件列表
+    getConflictedFiles: (repoPath: string): Promise<Array<{
+      path: string
+      resolved: boolean
+      conflictCount: number
+    }>> =>
+      ipcRenderer.invoke('git:getConflictedFiles', repoPath),
+
+    // 获取冲突内容
+    getConflictContent: (repoPath: string, filePath: string): Promise<{
+      ours: string
+      base: string
+      theirs: string
+      merged: string
+    }> =>
+      ipcRenderer.invoke('git:getConflictContent', repoPath, filePath),
+
+    // 解决冲突
+    resolveConflict: (repoPath: string, filePath: string, content: string): Promise<void> =>
+      ipcRenderer.invoke('git:resolveConflict', repoPath, filePath, content),
+
+    // 中止合并
+    abortMerge: (repoPath: string): Promise<void> =>
+      ipcRenderer.invoke('git:abortMerge', repoPath),
+
+    // 继续合并
+    continueMerge: (repoPath: string): Promise<void> =>
+      ipcRenderer.invoke('git:continueMerge', repoPath),
+
+    // ============ Interactive Rebase ============
+
+    // 获取 rebase 状态
+    getRebaseStatus: (repoPath: string): Promise<{
+      inProgress: boolean
+      currentStep: number
+      totalSteps: number
+      currentCommit?: string
+      onto?: string
+      originalBranch?: string
+      hasConflicts: boolean
+    }> =>
+      ipcRenderer.invoke('git:getRebaseStatus', repoPath),
+
+    // 获取可 rebase 的提交列表
+    getCommitsForRebase: (repoPath: string, onto: string): Promise<Array<{
+      hash: string
+      shortHash: string
+      message: string
+      action: string
+      author: string
+      authorEmail: string
+      date: string
+    }>> =>
+      ipcRenderer.invoke('git:getCommitsForRebase', repoPath, onto),
+
+    // 开始交互式 rebase
+    rebaseInteractiveStart: (repoPath: string, options: {
+      onto: string
+      actions: Array<{ hash: string; action: string; message?: string }>
+    }): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:rebaseInteractiveStart', repoPath, options),
+
+    // 继续 rebase
+    rebaseContinue: (repoPath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:rebaseContinue', repoPath),
+
+    // 跳过当前提交
+    rebaseSkip: (repoPath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:rebaseSkip', repoPath),
+
+    // 中止 rebase
+    rebaseAbort: (repoPath: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('git:rebaseAbort', repoPath),
+
+    // ============ Cherry-pick Multiple ============
+
+    // 批量 cherry-pick
+    cherryPickMultiple: (
+      repoPath: string,
+      commitHashes: string[],
+      options?: { noCommit?: boolean; recordOrigin?: boolean }
+    ): Promise<{ success: boolean; error?: string; conflictAt?: string }> =>
+      ipcRenderer.invoke('git:cherryPickMultiple', repoPath, commitHashes, options),
+
+    // Cherry-pick 预览
+    cherryPickPreview: (repoPath: string, commitHash: string): Promise<{
+      files: Array<{
+        path: string
+        oldPath?: string
+        status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied'
+      }>
+      stats: { additions: number; deletions: number; filesChanged: number }
+    }> =>
+      ipcRenderer.invoke('git:cherryPickPreview', repoPath, commitHash),
+
+    // ============ Reflog ============
+
+    // 获取 reflog 条目
+    getReflog: (repoPath: string, limit?: number): Promise<Array<{
+      index: number
+      hash: string
+      shortHash: string
+      operationType: string
+      action: string
+      message: string
+      date: string
+      relativeDate: string
+      author: string
+      authorEmail: string
+      previousHash?: string
+      isOrphaned?: boolean
+      branch?: string
+    }>> =>
+      ipcRenderer.invoke('git:getReflog', repoPath, limit),
+
+    // 获取特定 ref 的 reflog
+    getReflogForRef: (repoPath: string, ref: string, limit?: number): Promise<Array<{
+      index: number
+      hash: string
+      shortHash: string
+      operationType: string
+      action: string
+      message: string
+      date: string
+      relativeDate: string
+      author: string
+      authorEmail: string
+      previousHash?: string
+      isOrphaned?: boolean
+      branch?: string
+    }>> =>
+      ipcRenderer.invoke('git:getReflogForRef', repoPath, ref, limit)
   },
 
   // ============ 终端操作 ============
@@ -2110,6 +2259,121 @@ declare global {
           deletions: number
           filesChanged: number
         }>
+
+        // ============ Merge Conflict Resolution ============
+
+        getMergeStatus: (repoPath: string) => Promise<{
+          inMerge: boolean
+          mergeHead?: string
+          mergeMessage?: string
+          conflictCount: number
+          isRebaseConflict?: boolean
+        }>
+
+        hasConflicts: (repoPath: string) => Promise<boolean>
+
+        getConflictedFiles: (repoPath: string) => Promise<Array<{
+          path: string
+          resolved: boolean
+          conflictCount: number
+        }>>
+
+        getConflictContent: (repoPath: string, filePath: string) => Promise<{
+          ours: string
+          base: string
+          theirs: string
+          merged: string
+        }>
+
+        resolveConflict: (repoPath: string, filePath: string, content: string) => Promise<void>
+
+        abortMerge: (repoPath: string) => Promise<void>
+
+        continueMerge: (repoPath: string) => Promise<void>
+
+        // ============ Interactive Rebase ============
+
+        getRebaseStatus: (repoPath: string) => Promise<{
+          inProgress: boolean
+          currentStep: number
+          totalSteps: number
+          currentCommit?: string
+          onto?: string
+          originalBranch?: string
+          hasConflicts: boolean
+        }>
+
+        getCommitsForRebase: (repoPath: string, onto: string) => Promise<Array<{
+          hash: string
+          shortHash: string
+          message: string
+          action: string
+          author: string
+          authorEmail: string
+          date: string
+        }>>
+
+        rebaseInteractiveStart: (repoPath: string, options: {
+          onto: string
+          actions: Array<{ hash: string; action: string; message?: string }>
+        }) => Promise<{ success: boolean; error?: string }>
+
+        rebaseContinue: (repoPath: string) => Promise<{ success: boolean; error?: string }>
+
+        rebaseSkip: (repoPath: string) => Promise<{ success: boolean; error?: string }>
+
+        rebaseAbort: (repoPath: string) => Promise<{ success: boolean; error?: string }>
+
+        // ============ Cherry-pick Multiple ============
+
+        cherryPickMultiple: (
+          repoPath: string,
+          commitHashes: string[],
+          options?: { noCommit?: boolean; recordOrigin?: boolean }
+        ) => Promise<{ success: boolean; error?: string; conflictAt?: string }>
+
+        cherryPickPreview: (repoPath: string, commitHash: string) => Promise<{
+          files: Array<{
+            path: string
+            oldPath?: string
+            status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied'
+          }>
+          stats: { additions: number; deletions: number; filesChanged: number }
+        }>
+
+        // ============ Reflog ============
+
+        getReflog: (repoPath: string, limit?: number) => Promise<Array<{
+          index: number
+          hash: string
+          shortHash: string
+          operationType: string
+          action: string
+          message: string
+          date: string
+          relativeDate: string
+          author: string
+          authorEmail: string
+          previousHash?: string
+          isOrphaned?: boolean
+          branch?: string
+        }>>
+
+        getReflogForRef: (repoPath: string, ref: string, limit?: number) => Promise<Array<{
+          index: number
+          hash: string
+          shortHash: string
+          operationType: string
+          action: string
+          message: string
+          date: string
+          relativeDate: string
+          author: string
+          authorEmail: string
+          previousHash?: string
+          isOrphaned?: boolean
+          branch?: string
+        }>>
       }
 
       // 终端操作

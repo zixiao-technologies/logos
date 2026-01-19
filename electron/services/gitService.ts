@@ -659,6 +659,588 @@ export function registerGitHandlers(): void {
     }
     return { additions: 0, deletions: 0, filesChanged: 0 }
   })
+
+  // ============ Merge Conflict Resolution ============
+
+  // 获取合并状态
+  ipcMain.handle('git:getMergeStatus', async (_, repoPath: string): Promise<MergeStatusResult> => {
+    try {
+      // 检查是否在 merge 中
+      let inMerge = false
+      let mergeHead: string | undefined
+      let mergeMessage: string | undefined
+      let isRebaseConflict = false
+
+      try {
+        mergeHead = (await execGit(repoPath, 'rev-parse MERGE_HEAD')).trim()
+        inMerge = true
+      } catch {
+        // 不在 merge 中,检查是否在 rebase 中
+        try {
+          await execGit(repoPath, 'rev-parse --verify REBASE_HEAD')
+          isRebaseConflict = true
+          inMerge = true
+        } catch {
+          // 也不在 rebase 中
+        }
+      }
+
+      // 获取 merge 消息
+      if (inMerge && !isRebaseConflict) {
+        try {
+          mergeMessage = (await execGit(repoPath, 'cat-file -p MERGE_MSG')).trim()
+        } catch {
+          // 没有 merge 消息
+        }
+      }
+
+      // 获取冲突文件数量
+      let conflictCount = 0
+      try {
+        const statusOutput = await execGit(repoPath, 'status --porcelain=v1')
+        const lines = statusOutput.trim().split('\n').filter(Boolean)
+        conflictCount = lines.filter(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD')).length
+      } catch {
+        // 无法获取状态
+      }
+
+      return {
+        inMerge,
+        mergeHead,
+        mergeMessage,
+        conflictCount,
+        isRebaseConflict
+      }
+    } catch {
+      return {
+        inMerge: false,
+        conflictCount: 0
+      }
+    }
+  })
+
+  // 检查是否有冲突
+  ipcMain.handle('git:hasConflicts', async (_, repoPath: string): Promise<boolean> => {
+    try {
+      const statusOutput = await execGit(repoPath, 'status --porcelain=v1')
+      const lines = statusOutput.trim().split('\n').filter(Boolean)
+      return lines.some(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
+    } catch {
+      return false
+    }
+  })
+
+  // 获取冲突文件列表
+  ipcMain.handle('git:getConflictedFiles', async (_, repoPath: string): Promise<ConflictedFileResult[]> => {
+    try {
+      const statusOutput = await execGit(repoPath, 'status --porcelain=v1')
+      const lines = statusOutput.trim().split('\n').filter(Boolean)
+      const conflictedFiles: ConflictedFileResult[] = []
+
+      for (const line of lines) {
+        if (line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD')) {
+          const filePath = line.slice(3)
+
+          // 读取文件内容来计算冲突块数量
+          let conflictCount = 0
+          try {
+            // 尝试读取 base 版本来确认是冲突文件
+            await execGit(repoPath, `show :1:"${filePath}"`)
+            // 如果能读取到,说明文件有冲突标记
+            const fileContent = require('fs').readFileSync(`${repoPath}/${filePath}`, 'utf-8')
+            const matches = fileContent.match(/^<<<<<<<.*$/gm)
+            conflictCount = matches ? matches.length : 0
+          } catch {
+            conflictCount = 1 // 默认假设有一个冲突
+          }
+
+          conflictedFiles.push({
+            path: filePath,
+            resolved: conflictCount === 0,
+            conflictCount
+          })
+        }
+      }
+
+      return conflictedFiles
+    } catch {
+      return []
+    }
+  })
+
+  // 获取冲突内容 (ours/base/theirs/merged)
+  ipcMain.handle('git:getConflictContent', async (_, repoPath: string, filePath: string): Promise<ConflictContentResult> => {
+    let ours = ''
+    let base = ''
+    let theirs = ''
+    let merged = ''
+
+    try {
+      // :1: = base (共同祖先)
+      // :2: = ours (HEAD/local)
+      // :3: = theirs (MERGE_HEAD/remote)
+      try {
+        base = await execGit(repoPath, `show ":1:${filePath}"`)
+      } catch {
+        base = ''
+      }
+
+      try {
+        ours = await execGit(repoPath, `show ":2:${filePath}"`)
+      } catch {
+        ours = ''
+      }
+
+      try {
+        theirs = await execGit(repoPath, `show ":3:${filePath}"`)
+      } catch {
+        theirs = ''
+      }
+
+      // 读取工作目录中的合并文件 (带冲突标记)
+      try {
+        const fs = require('fs')
+        merged = fs.readFileSync(`${repoPath}/${filePath}`, 'utf-8')
+      } catch {
+        merged = ''
+      }
+
+      return { ours, base, theirs, merged }
+    } catch {
+      return { ours: '', base: '', theirs: '', merged: '' }
+    }
+  })
+
+  // 解决冲突 (保存解决后的内容)
+  ipcMain.handle('git:resolveConflict', async (_, repoPath: string, filePath: string, content: string): Promise<void> => {
+    const fs = require('fs')
+    const path = require('path')
+
+    // 写入解决后的内容
+    const fullPath = path.join(repoPath, filePath)
+    fs.writeFileSync(fullPath, content, 'utf-8')
+
+    // 将文件标记为已解决 (添加到暂存区)
+    await execGit(repoPath, `add "${filePath}"`)
+  })
+
+  // 中止合并
+  ipcMain.handle('git:abortMerge', async (_, repoPath: string): Promise<void> => {
+    try {
+      // 先尝试 merge --abort
+      await execGit(repoPath, 'merge --abort')
+    } catch {
+      // 如果失败,尝试 rebase --abort
+      try {
+        await execGit(repoPath, 'rebase --abort')
+      } catch {
+        // 都失败了,尝试 reset
+        await execGit(repoPath, 'reset --merge')
+      }
+    }
+  })
+
+  // 继续合并 (所有冲突解决后)
+  ipcMain.handle('git:continueMerge', async (_, repoPath: string): Promise<void> => {
+    // 检查是否还有冲突
+    const statusOutput = await execGit(repoPath, 'status --porcelain=v1')
+    const lines = statusOutput.trim().split('\n').filter(Boolean)
+    const hasConflicts = lines.some(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
+
+    if (hasConflicts) {
+      throw new Error('There are still unresolved conflicts')
+    }
+
+    // 检查是 rebase 还是 merge
+    try {
+      await execGit(repoPath, 'rev-parse --verify REBASE_HEAD')
+      // 是 rebase,继续 rebase
+      await execGit(repoPath, 'rebase --continue')
+    } catch {
+      // 是 merge,提交合并
+      await execGit(repoPath, 'commit --no-edit')
+    }
+  })
+
+  // ============ Interactive Rebase ============
+
+  // 获取 rebase 状态
+  ipcMain.handle('git:getRebaseStatus', async (_, repoPath: string): Promise<RebaseStatusResult> => {
+    const fs = require('fs')
+    const path = require('path')
+
+    const gitDir = path.join(repoPath, '.git')
+    const rebaseDir = fs.existsSync(path.join(gitDir, 'rebase-merge'))
+      ? path.join(gitDir, 'rebase-merge')
+      : fs.existsSync(path.join(gitDir, 'rebase-apply'))
+        ? path.join(gitDir, 'rebase-apply')
+        : null
+
+    if (!rebaseDir) {
+      return {
+        inProgress: false,
+        currentStep: 0,
+        totalSteps: 0,
+        hasConflicts: false
+      }
+    }
+
+    let currentStep = 0
+    let totalSteps = 0
+    let currentCommit: string | undefined
+    let onto: string | undefined
+    let originalBranch: string | undefined
+
+    try {
+      // 读取当前步骤
+      if (fs.existsSync(path.join(rebaseDir, 'msgnum'))) {
+        currentStep = parseInt(fs.readFileSync(path.join(rebaseDir, 'msgnum'), 'utf-8').trim())
+      }
+      // 读取总步骤
+      if (fs.existsSync(path.join(rebaseDir, 'end'))) {
+        totalSteps = parseInt(fs.readFileSync(path.join(rebaseDir, 'end'), 'utf-8').trim())
+      }
+      // 读取 onto
+      if (fs.existsSync(path.join(rebaseDir, 'onto'))) {
+        onto = fs.readFileSync(path.join(rebaseDir, 'onto'), 'utf-8').trim()
+      }
+      // 读取原始分支
+      if (fs.existsSync(path.join(rebaseDir, 'head-name'))) {
+        originalBranch = fs.readFileSync(path.join(rebaseDir, 'head-name'), 'utf-8').trim().replace('refs/heads/', '')
+      }
+      // 读取当前 commit
+      if (fs.existsSync(path.join(rebaseDir, 'stopped-sha'))) {
+        currentCommit = fs.readFileSync(path.join(rebaseDir, 'stopped-sha'), 'utf-8').trim()
+      }
+    } catch {
+      // 忽略读取错误
+    }
+
+    // 检查是否有冲突
+    let hasConflicts = false
+    try {
+      const statusOutput = await execGit(repoPath, 'status --porcelain=v1')
+      const lines = statusOutput.trim().split('\n').filter(Boolean)
+      hasConflicts = lines.some(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
+    } catch {
+      // 忽略
+    }
+
+    return {
+      inProgress: true,
+      currentStep,
+      totalSteps,
+      currentCommit,
+      onto,
+      originalBranch,
+      hasConflicts
+    }
+  })
+
+  // 获取可 rebase 的提交列表
+  ipcMain.handle('git:getCommitsForRebase', async (_, repoPath: string, onto: string): Promise<RebaseCommitResult[]> => {
+    try {
+      const format = '%H%n%h%n%s%n%an%n%ae%n%ci'
+      const output = await execGit(repoPath, `log --format="${format}" --reverse "${onto}..HEAD"`)
+
+      const commits: RebaseCommitResult[] = []
+
+      // 每个 commit 有 6 行
+      const lines = output.trim().split('\n').filter(Boolean)
+      for (let i = 0; i + 5 < lines.length; i += 6) {
+        commits.push({
+          hash: lines[i],
+          shortHash: lines[i + 1],
+          message: lines[i + 2],
+          author: lines[i + 3],
+          authorEmail: lines[i + 4],
+          date: lines[i + 5],
+          action: 'pick'
+        })
+      }
+
+      return commits
+    } catch {
+      return []
+    }
+  })
+
+  // 开始交互式 rebase
+  ipcMain.handle('git:rebaseInteractiveStart', async (
+    _,
+    repoPath: string,
+    options: { onto: string; actions: Array<{ hash: string; action: string; message?: string }> }
+  ): Promise<{ success: boolean; error?: string }> => {
+    const fs = require('fs')
+    const path = require('path')
+    const os = require('os')
+
+    try {
+      // 创建一个临时的 todo 文件
+      const todoContent = options.actions.map(a => {
+        const action = a.action === 'drop' ? 'drop' : a.action
+        return `${action} ${a.hash} ${a.message || ''}`
+      }).join('\n')
+
+      // 创建临时文件
+      const todoPath = path.join(os.tmpdir(), `git-rebase-todo-${Date.now()}`)
+      fs.writeFileSync(todoPath, todoContent)
+
+      // 创建一个编辑器脚本,将 todo 内容写入
+      const editorScript = path.join(os.tmpdir(), `git-rebase-editor-${Date.now()}.sh`)
+      fs.writeFileSync(editorScript, `#!/bin/sh\ncat "${todoPath}" > "$1"\n`, { mode: 0o755 })
+
+      // 执行 rebase,使用自定义编辑器
+      try {
+        await execAsync(`GIT_SEQUENCE_EDITOR="${editorScript}" git rebase -i "${options.onto}"`, {
+          cwd: repoPath,
+          encoding: 'utf-8'
+        })
+
+        // 清理临时文件
+        try {
+          fs.unlinkSync(todoPath)
+          fs.unlinkSync(editorScript)
+        } catch {}
+
+        return { success: true }
+      } catch (error) {
+        // 清理临时文件
+        try {
+          fs.unlinkSync(todoPath)
+          fs.unlinkSync(editorScript)
+        } catch {}
+
+        const err = error as { stderr?: string; message: string }
+        // 检查是否是因为冲突而暂停
+        if (err.stderr?.includes('CONFLICT') || err.message?.includes('CONFLICT')) {
+          return { success: true } // 冲突是正常的,需要解决
+        }
+        return { success: false, error: err.stderr || err.message }
+      }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  // 继续 rebase
+  ipcMain.handle('git:rebaseContinue', async (_, repoPath: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await execGit(repoPath, 'rebase --continue')
+      return { success: true }
+    } catch (error) {
+      const err = error as Error
+      if (err.message?.includes('CONFLICT')) {
+        return { success: true } // 新的冲突
+      }
+      return { success: false, error: err.message }
+    }
+  })
+
+  // 跳过当前提交
+  ipcMain.handle('git:rebaseSkip', async (_, repoPath: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await execGit(repoPath, 'rebase --skip')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  // 中止 rebase
+  ipcMain.handle('git:rebaseAbort', async (_, repoPath: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      await execGit(repoPath, 'rebase --abort')
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  // ============ Cherry-pick Multiple ============
+
+  // 批量 cherry-pick
+  ipcMain.handle('git:cherryPickMultiple', async (
+    _,
+    repoPath: string,
+    commitHashes: string[],
+    options?: { noCommit?: boolean; recordOrigin?: boolean }
+  ): Promise<{ success: boolean; error?: string; conflictAt?: string }> => {
+    try {
+      const noCommitFlag = options?.noCommit ? '-n' : ''
+      const originFlag = options?.recordOrigin ? '-x' : ''
+
+      for (const hash of commitHashes) {
+        try {
+          await execGit(repoPath, `cherry-pick ${noCommitFlag} ${originFlag} "${hash}"`)
+        } catch (error) {
+          const err = error as Error
+          if (err.message?.includes('CONFLICT')) {
+            return { success: false, error: 'Conflict during cherry-pick', conflictAt: hash }
+          }
+          throw error
+        }
+      }
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  })
+
+  // Cherry-pick 预览
+  ipcMain.handle('git:cherryPickPreview', async (
+    _,
+    repoPath: string,
+    commitHash: string
+  ): Promise<{ files: CommitFileResult[]; stats: { additions: number; deletions: number; filesChanged: number } }> => {
+    const files = await execGit(repoPath, `diff-tree --no-commit-id --name-status -r "${commitHash}"`)
+    const parsedFiles: CommitFileResult[] = files.trim().split('\n').filter(Boolean).map(line => {
+      const parts = line.split('\t')
+      const status = parts[0]
+      let filePath = parts[1]
+      let oldPath: string | undefined
+
+      if (status.startsWith('R')) {
+        oldPath = parts[1]
+        filePath = parts[2]
+      }
+
+      return {
+        path: filePath,
+        oldPath,
+        status: parseFileStatus(status)
+      }
+    })
+
+    // 获取统计
+    const statOutput = await execGit(repoPath, `diff-tree --no-commit-id --stat --stat-width=1000 -r "${commitHash}"`)
+    const statLines = statOutput.trim().split('\n')
+    const lastLine = statLines[statLines.length - 1] || ''
+    const match = lastLine.match(/(\d+) files? changed(?:, (\d+) insertions?\(\+\))?(?:, (\d+) deletions?\(-\))?/)
+
+    const stats = match ? {
+      filesChanged: parseInt(match[1]) || 0,
+      additions: parseInt(match[2]) || 0,
+      deletions: parseInt(match[3]) || 0
+    } : { additions: 0, deletions: 0, filesChanged: 0 }
+
+    return { files: parsedFiles, stats }
+  })
+
+  // ============ Reflog ============
+
+  // 获取 reflog 条目
+  ipcMain.handle('git:getReflog', async (_, repoPath: string, limit: number = 100): Promise<ReflogEntryResult[]> => {
+    try {
+      const format = '%H|%h|%gd|%gs|%ci|%cr|%an|%ae'
+      const output = await execGit(repoPath, `reflog --format="${format}" -n ${limit}`)
+
+      return parseReflog(output)
+    } catch {
+      return []
+    }
+  })
+
+  // 获取特定 ref 的 reflog
+  ipcMain.handle('git:getReflogForRef', async (_, repoPath: string, ref: string, limit: number = 100): Promise<ReflogEntryResult[]> => {
+    try {
+      const format = '%H|%h|%gd|%gs|%ci|%cr|%an|%ae'
+      const output = await execGit(repoPath, `reflog show "${ref}" --format="${format}" -n ${limit}`)
+
+      return parseReflog(output)
+    } catch {
+      return []
+    }
+  })
+}
+
+// ============ Reflog 解析函数 ============
+
+function parseReflog(output: string): ReflogEntryResult[] {
+  const entries: ReflogEntryResult[] = []
+  const lines = output.trim().split('\n').filter(Boolean)
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]
+    const parts = line.split('|')
+    if (parts.length < 8) continue
+
+    const [hash, shortHash, refSelector, action, date, relativeDate, author, authorEmail] = parts
+
+    // 解析 refSelector 获取 index (HEAD@{0} -> 0)
+    const indexMatch = refSelector.match(/@\{(\d+)\}/)
+    const index = indexMatch ? parseInt(indexMatch[1]) : i
+
+    // 解析操作类型
+    const operationType = parseReflogOperationType(action)
+
+    // 解析消息和分支
+    const { message, branch } = parseReflogMessage(action)
+
+    entries.push({
+      index,
+      hash,
+      shortHash,
+      operationType,
+      action,
+      message,
+      date,
+      relativeDate,
+      author,
+      authorEmail,
+      branch
+    })
+  }
+
+  return entries
+}
+
+function parseReflogOperationType(action: string): string {
+  const actionLower = action.toLowerCase()
+  if (actionLower.startsWith('commit')) return 'commit'
+  if (actionLower.startsWith('checkout')) return 'checkout'
+  if (actionLower.startsWith('reset')) return 'reset'
+  if (actionLower.startsWith('merge')) return 'merge'
+  if (actionLower.startsWith('rebase')) return 'rebase'
+  if (actionLower.startsWith('cherry-pick')) return 'cherry-pick'
+  if (actionLower.startsWith('pull')) return 'pull'
+  if (actionLower.startsWith('push')) return 'push'
+  if (actionLower.includes('stash')) return 'stash'
+  if (actionLower.startsWith('clone')) return 'clone'
+  if (actionLower.startsWith('branch')) return 'branch'
+  return 'other'
+}
+
+function parseReflogMessage(action: string): { message: string; branch?: string } {
+  // 解析类似 "checkout: moving from main to feature" 的消息
+  const checkoutMatch = action.match(/checkout: moving from (\S+) to (\S+)/)
+  if (checkoutMatch) {
+    return {
+      message: `Switched from ${checkoutMatch[1]} to ${checkoutMatch[2]}`,
+      branch: checkoutMatch[2]
+    }
+  }
+
+  // 解析 "commit: message" 格式
+  const commitMatch = action.match(/^commit(?:\s*\(.*?\))?:\s*(.*)/)
+  if (commitMatch) {
+    return { message: commitMatch[1] }
+  }
+
+  // 解析 "reset: moving to HEAD~1" 格式
+  const resetMatch = action.match(/reset: moving to (.*)/)
+  if (resetMatch) {
+    return { message: `Reset to ${resetMatch[1]}` }
+  }
+
+  // 解析 merge
+  const mergeMatch = action.match(/merge (\S+):/)
+  if (mergeMatch) {
+    return { message: `Merged ${mergeMatch[1]}`, branch: mergeMatch[1] }
+  }
+
+  return { message: action }
 }
 
 // ============ 辅助类型 ============
@@ -972,4 +1554,67 @@ function parseFileStatus(status: string): 'added' | 'modified' | 'deleted' | 're
     case 'C': return 'copied'
     default: return 'modified'
   }
+}
+
+// ============ Merge Conflict Types ============
+
+interface MergeStatusResult {
+  inMerge: boolean
+  mergeHead?: string
+  mergeMessage?: string
+  conflictCount: number
+  isRebaseConflict?: boolean
+}
+
+interface ConflictedFileResult {
+  path: string
+  resolved: boolean
+  conflictCount: number
+}
+
+interface ConflictContentResult {
+  ours: string
+  base: string
+  theirs: string
+  merged: string
+}
+
+// ============ Rebase Types ============
+
+interface RebaseStatusResult {
+  inProgress: boolean
+  currentStep: number
+  totalSteps: number
+  currentCommit?: string
+  onto?: string
+  originalBranch?: string
+  hasConflicts: boolean
+}
+
+interface RebaseCommitResult {
+  hash: string
+  shortHash: string
+  message: string
+  action: string
+  author: string
+  authorEmail: string
+  date: string
+}
+
+// ============ Reflog Types ============
+
+interface ReflogEntryResult {
+  index: number
+  hash: string
+  shortHash: string
+  operationType: string
+  action: string
+  message: string
+  date: string
+  relativeDate: string
+  author: string
+  authorEmail: string
+  previousHash?: string
+  isOrphaned?: boolean
+  branch?: string
 }
