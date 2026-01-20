@@ -18,6 +18,7 @@ import LSPSetupDialog from '@/components/LSPSetupDialog.vue'
 import FeedbackReportDialog from '@/components/FeedbackReportDialog.vue'
 import { DebugSidebarPanel } from '@/components/Debug'
 import { IntelligenceModeIndicator } from '@/components/StatusBar'
+import { GitOperationIndicator } from '@/components/StatusBar'
 import type { IndexingProgress, LanguageServerStatus } from '@/types/intelligence'
 
 // 导入 MDUI 图标
@@ -374,6 +375,8 @@ onUnmounted(() => {
           <mdui-icon-source></mdui-icon-source>
           {{ statusBarInfo.branch }}
         </span>
+        <!-- Git 操作状态指示器 (合并/Rebase) -->
+        <GitOperationIndicator />
         <span class="status-item" v-if="editorStore.hasUnsavedChanges">
           <mdui-icon-sync></mdui-icon-sync>
           {{ editorStore.dirtyTabs.length }} 未保存

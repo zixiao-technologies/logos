@@ -31,6 +31,24 @@ const routes: RouteRecordRaw[] = [
     name: 'diff',
     component: () => import('@/views/DiffEditorView.vue'),
     meta: { title: 'Diff' }
+  },
+  {
+    path: '/merge',
+    name: 'merge',
+    component: () => import('@/views/MergeConflictView.vue'),
+    meta: { title: 'Merge Conflicts' }
+  },
+  {
+    path: '/rebase',
+    name: 'rebase',
+    component: () => import('@/views/InteractiveRebaseView.vue'),
+    meta: { title: 'Interactive Rebase' }
+  },
+  {
+    path: '/reflog',
+    name: 'reflog',
+    component: () => import('@/views/ReflogView.vue'),
+    meta: { title: 'Reflog' }
   }
 ]
 

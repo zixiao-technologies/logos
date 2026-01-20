@@ -12,6 +12,7 @@ import { useRouter } from 'vue-router'
 import BranchSelector from './BranchSelector.vue'
 import ChangedFileList from './ChangedFileList.vue'
 import CommitBox from './CommitBox.vue'
+import GitAdvancedPanel from './GitAdvancedPanel.vue'
 
 // 导入 MDUI 图标
 import '@mdui/icons/refresh.js'
@@ -20,6 +21,7 @@ import '@mdui/icons/download.js'
 import '@mdui/icons/upload.js'
 import '@mdui/icons/check-circle.js'
 import '@mdui/icons/error.js'
+import '@mdui/icons/keyboard-arrow-down.js'
 
 const gitStore = useGitStore()
 const fileExplorerStore = useFileExplorerStore()
@@ -255,6 +257,9 @@ const handleUpdateMessage = (message: string) => {
           <mdui-icon-check-circle></mdui-icon-check-circle>
           <p>没有要提交的更改</p>
         </div>
+
+        <!-- 高级 Git 操作面板 -->
+        <GitAdvancedPanel />
       </div>
 
       <!-- 错误信息 -->

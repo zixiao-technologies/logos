@@ -42,7 +42,7 @@ export default defineConfig({
       }
     }
   ]), renderer(), sentryVitePlugin({
-    org: "zixiaosystem",
+    org: "zixiao-technologies",
     project: "logos"
   })],
   resolve: {
