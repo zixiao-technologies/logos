@@ -9,11 +9,16 @@ description = "Symbol indexing for Logos language service"
 [dependencies]
 logos-core.workspace = true
 serde.workspace = true
-regex = "1.10"
+regex.workspace = true
 dashmap = "6.0"
-tree-sitter = "0.24"
-tree-sitter-typescript = "0.23"
-tree-sitter-python = "0.23"
+tree-sitter.workspace = true
+tree-sitter-typescript.workspace = true
+tree-sitter-python.workspace = true
+tree-sitter-go.workspace = true
+tree-sitter-rust.workspace = true
+tree-sitter-c.workspace = true
+tree-sitter-cpp.workspace = true
+tree-sitter-java.workspace = true
 
 [dev-dependencies]
 tempfile = "3.10"

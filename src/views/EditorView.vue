@@ -273,6 +273,9 @@ function initEditor() {
   // 初始化 Blame Provider
   blameProvider = new InlineBlameProvider(editor)
 
+  // 注册重构相关的上下文菜单动作（基于 Monaco Code Actions）
+  registerRefactorContextMenuActions(editor)
+
   // 注册 GitLens 相关的上下文菜单动作
   registerGitLensContextMenuActions(editor)
 }
@@ -391,6 +394,20 @@ async function updateCurrentLineBlame(lineNumber: number) {
 }
 
 // ============ 上下文菜单功能 ============
+
+// 注册重构上下文菜单动作
+function registerRefactorContextMenuActions(editorInstance: monaco.editor.IStandaloneCodeEditor) {
+  editorInstance.addAction({
+    id: 'logos.refactorMenu',
+    label: '重构...',
+    contextMenuGroupId: 'navigation',
+    contextMenuOrder: 10,
+    run: () => {
+      // 触发 Monaco 的 Code Action 菜单，并偏向 refactor 类别
+      editorInstance.trigger('keyboard', 'editor.action.codeAction', { kind: 'refactor' })
+    }
+  })
+}
 
 // 注册 GitLens 上下文菜单动作
 function registerGitLensContextMenuActions(editorInstance: monaco.editor.IStandaloneCodeEditor) {

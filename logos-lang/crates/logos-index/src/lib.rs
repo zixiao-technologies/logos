@@ -2,10 +2,15 @@
 
 pub mod adapter;
 pub mod comments;
+pub mod c_adapter;
+pub mod cpp_adapter;
+pub mod go_adapter;
 pub mod incremental;
 pub mod indexer;
 pub mod inverted;
+pub mod java_adapter;
 pub mod python_adapter;
+pub mod rust_adapter;
 pub mod symbol_table;
 pub mod typescript_adapter;
 
@@ -14,8 +19,13 @@ pub use adapter::{
     SymbolBuilder, TypeRelation, make_location,
 };
 pub use comments::{CommentScanner, ScannerConfig, TodoIndex, TodoItem, TodoKind};
+pub use c_adapter::CAdapter;
+pub use cpp_adapter::CppAdapter;
+pub use go_adapter::GoAdapter;
 pub use indexer::{IndexingStats, ProjectIndexer};
+pub use java_adapter::JavaAdapter;
 pub use python_adapter::PythonAdapter;
+pub use rust_adapter::RustAdapter;
 pub use symbol_table::{
     Attribute, CallGraph, CallSite, CallType, DependencyGraph, ProjectIndex, SmartSymbol, SymbolId,
     SymbolLocation, SymbolReference, SymbolTable, TypeHierarchy, TypeInfo, Visibility,

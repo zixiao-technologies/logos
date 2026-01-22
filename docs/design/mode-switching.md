@@ -139,11 +139,22 @@ export const useIntelligenceStore = defineStore('intelligence', {
     },
 
     async analyzeProject(): Promise<ProjectAnalysis> {
-      // TODO: 实现项目分析逻辑
+      try {
+        // 通过主进程 IPC 分析项目（文件数/总大小/语言/依赖复杂度）
+        if (window.electronAPI?.intelligence?.analyzeProject) {
+          return await window.electronAPI.intelligence.analyzeProject()
+        }
+      } catch (error) {
+        console.error('Failed to analyze project:', error)
+      }
+
+      // fallback：返回默认值（不会阻塞 UI）
       return {
         fileCount: 0,
+        totalSize: 0,
         estimatedMemory: 0,
         hasComplexDependencies: false,
+        languages: [],
       }
     }
   },

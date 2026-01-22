@@ -7,6 +7,11 @@
 import { computed } from 'vue'
 import { useEditorStore } from '@/stores/editor'
 
+const props = defineProps<{
+  hasSelection?: boolean
+  languageId?: string
+}>()
+
 // 导入图标
 import '@mdui/icons/code.js'
 import '@mdui/icons/functions.js'
@@ -31,13 +36,13 @@ const editorStore = useEditorStore()
 
 // 检查是否有选中的代码
 const hasSelection = computed(() => {
-  // TODO: 从编辑器获取选区状态
-  return true
+  if (typeof props.hasSelection === 'boolean') return props.hasSelection
+  return false
 })
 
 // 当前语言
 const currentLanguage = computed(() => {
-  return editorStore.activeTab?.language || 'plaintext'
+  return props.languageId || editorStore.activeTab?.language || 'plaintext'
 })
 
 // 检查是否支持特定重构

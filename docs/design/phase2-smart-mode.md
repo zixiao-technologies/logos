@@ -571,17 +571,17 @@ pub struct TreeSitterAdapter {
 - [x] 项目级别设置支持 (`electron/services/projectSettingsService.ts`)
 - [x] CodeActionProvider for Refactoring (`src/services/lsp/providers/RefactorCodeActionProvider.ts`)
 - [x] Rust 后端重构 handlers (rename, extract_variable, extract_method, safe_delete)
-- [ ] 重构对话框 UI (输入新名称、显示冲突)
-- [ ] RefactorMenu 集成到 EditorView
-- [ ] 内联重构
-- [ ] 移动符号重构
+- [ ] 重构对话框 UI (输入新名称、显示冲突)（当前：使用 Monaco 内置重命名 UI / 简单 prompt，待替换为专用对话框）
+- [x] RefactorMenu 集成到 EditorView（通过 Monaco `Code Action` 上下文菜单入口 `重构...`）
+- [ ] 内联重构（后端/前端命令与 UI 未实现）
+- [ ] 移动符号重构（后端/前端命令与 UI 未实现）
 
 ### Phase 2.5: 更多语言
 - [x] Python 适配器 (`logos-index/src/python_adapter.rs`)
-- [ ] Go 适配器
-- [ ] Rust 适配器
-- [ ] C/C++ 适配器
-- [ ] Java 适配器
+- [ ] Go 适配器（索引层面：`logos-index` 尚未实现；UI/Daemon 层面已预留语言映射与扩展名识别）
+- [ ] Rust 适配器（索引层面：`logos-index` 尚未实现；UI/Daemon 层面已预留语言映射与扩展名识别）
+- [ ] C/C++ 适配器（索引层面：`logos-index` 尚未实现；解析层存在 `logos-parser` 基础）
+- [ ] Java 适配器（索引层面：`logos-index` 尚未实现；UI/Daemon 层面已预留语言映射与扩展名识别）
 
 ## 已实现的核心组件
 

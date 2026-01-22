@@ -84,6 +84,8 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
 }
 
 export class IntelligenceManager {
+  private static refactorCommandsRegistered = false
+
   private disposables: monaco.IDisposable[] = []
   private diagnosticsManager: DiagnosticsManager
   private projectRoot: string | null = null
@@ -99,6 +101,209 @@ export class IntelligenceManager {
 
   constructor() {
     this.diagnosticsManager = new DiagnosticsManager()
+    this.registerRefactorCommandsOnce()
+  }
+
+  private registerRefactorCommandsOnce(): void {
+    if (IntelligenceManager.refactorCommandsRegistered) return
+    IntelligenceManager.refactorCommandsRegistered = true
+
+    const applyTextEdits = (uri: string, edits: Array<{ range: unknown; newText: string }>) => {
+      const model = monaco.editor.getModel(monaco.Uri.file(uri))
+      if (!model) return
+
+      const monacoEdits = edits
+        .map((e) => {
+          const r = this.toMonacoRange(e.range)
+          if (!r) return null
+          return { range: r, text: e.newText }
+        })
+        .filter((e): e is { range: monaco.Range; text: string } => Boolean(e))
+        // 倒序应用，避免 range 位移导致错位
+        .sort((a, b) => {
+          if (a.range.startLineNumber !== b.range.startLineNumber) return b.range.startLineNumber - a.range.startLineNumber
+          return b.range.startColumn - a.range.startColumn
+        })
+
+      if (monacoEdits.length > 0) {
+        model.pushEditOperations([], monacoEdits, () => null)
+      }
+    }
+
+    const getActiveModelAndRange = (maybeUri?: monaco.Uri, maybeRange?: monaco.Range) => {
+      const model = maybeUri ? monaco.editor.getModel(maybeUri) : null
+      if (!model) return null
+      const range = maybeRange ?? model.getFullModelRange()
+      return { model, range }
+    }
+
+    monaco.editor.registerCommand('refactor.extractVariable', async (_accessor, uri: monaco.Uri, range: monaco.Range) => {
+      if (!daemonService.isInitialized()) return
+      const active = getActiveModelAndRange(uri, range)
+      if (!active) return
+
+      const variableName = window.prompt('变量名', 'newVariable')
+      if (!variableName) return
+
+      const filePath = active.model.uri.fsPath
+      const result = await daemonService.extractVariable(
+        filePath,
+        active.range.startLineNumber - 1,
+        active.range.startColumn - 1,
+        active.range.endLineNumber - 1,
+        active.range.endColumn - 1,
+        variableName
+      ) as { success?: boolean; edits?: Array<{ range: unknown; newText: string }>; error?: string }
+
+      if (!result?.success || !result.edits) {
+        if (result?.error) console.error('[Refactor] extractVariable failed:', result.error)
+        return
+      }
+
+      applyTextEdits(filePath, result.edits)
+    })
+
+    monaco.editor.registerCommand('refactor.extractMethod', async (_accessor, uri: monaco.Uri, range: monaco.Range) => {
+      if (!daemonService.isInitialized()) return
+      const active = getActiveModelAndRange(uri, range)
+      if (!active) return
+
+      const methodName = window.prompt('方法名', 'newMethod')
+      if (!methodName) return
+
+      const filePath = active.model.uri.fsPath
+      const result = await daemonService.extractMethod(
+        filePath,
+        active.range.startLineNumber - 1,
+        active.range.startColumn - 1,
+        active.range.endLineNumber - 1,
+        active.range.endColumn - 1,
+        methodName
+      ) as { success?: boolean; edits?: Array<{ range: unknown; newText: string }>; error?: string }
+
+      if (!result?.success || !result.edits) {
+        if (result?.error) console.error('[Refactor] extractMethod failed:', result.error)
+        return
+      }
+
+      applyTextEdits(filePath, result.edits)
+    })
+
+    monaco.editor.registerCommand('refactor.extractConstant', async (_accessor, uri: monaco.Uri, range: monaco.Range) => {
+      // 暂时复用 extractVariable（由后端根据命名/语义决定是否生成 const）
+      if (!daemonService.isInitialized()) return
+      const active = getActiveModelAndRange(uri, range)
+      if (!active) return
+
+      const name = window.prompt('常量名', 'NEW_CONST')
+      if (!name) return
+
+      const filePath = active.model.uri.fsPath
+      const result = await daemonService.extractVariable(
+        filePath,
+        active.range.startLineNumber - 1,
+        active.range.startColumn - 1,
+        active.range.endLineNumber - 1,
+        active.range.endColumn - 1,
+        name
+      ) as { success?: boolean; edits?: Array<{ range: unknown; newText: string }>; error?: string }
+
+      if (!result?.success || !result.edits) {
+        if (result?.error) console.error('[Refactor] extractConstant failed:', result.error)
+        return
+      }
+
+      applyTextEdits(filePath, result.edits)
+    })
+
+    monaco.editor.registerCommand('refactor.safeDelete', async (_accessor, uri: monaco.Uri, range: monaco.Range) => {
+      if (!daemonService.isInitialized()) return
+      const active = getActiveModelAndRange(uri, range)
+      if (!active) return
+
+      const filePath = active.model.uri.fsPath
+      const analysis = await daemonService.canSafeDelete(
+        filePath,
+        active.range.startLineNumber - 1,
+        active.range.startColumn - 1,
+        active.range.endLineNumber - 1,
+        active.range.endColumn - 1
+      ) as { canDelete?: boolean; warnings?: string[]; error?: string }
+
+      if (!analysis?.canDelete) {
+        console.warn('[Refactor] safeDelete not allowed:', analysis?.error || analysis?.warnings?.join('\n') || 'unknown')
+        return
+      }
+
+      const ok = window.confirm('确认安全删除？（将修改当前文件）')
+      if (!ok) return
+
+      const result = await daemonService.safeDelete(
+        filePath,
+        active.range.startLineNumber - 1,
+        active.range.startColumn - 1,
+        active.range.endLineNumber - 1,
+        active.range.endColumn - 1
+      ) as { success?: boolean; edits?: Array<{ range: unknown; newText: string }>; error?: string }
+
+      if (!result?.success || !result.edits) {
+        if (result?.error) console.error('[Refactor] safeDelete failed:', result.error)
+        return
+      }
+
+      applyTextEdits(filePath, result.edits)
+    })
+  }
+
+  private toMonacoRange(range: unknown): monaco.Range | null {
+    // 支持两种形状：
+    // 1) { startLine, startColumn, endLine, endColumn } (0-based or 1-based)
+    // 2) { start: { line, character }, end: { line, character } } (0-based)
+    if (!range || typeof range !== 'object') return null
+
+    const r = range as Record<string, unknown>
+
+    // Shape 1
+    if (
+      typeof r.startLine === 'number' &&
+      typeof r.startColumn === 'number' &&
+      typeof r.endLine === 'number' &&
+      typeof r.endColumn === 'number'
+    ) {
+      // 约定 daemon 为 0-based；如果传入疑似 1-based（startLine=1 且 startColumn=1 很常见），也能正常工作
+      const sl = r.startLine as number
+      const sc = r.startColumn as number
+      const el = r.endLine as number
+      const ec = r.endColumn as number
+
+      const startLineNumber = sl <= 0 ? sl + 1 : sl
+      const startColumn = sc <= 0 ? sc + 1 : sc
+      const endLineNumber = el <= 0 ? el + 1 : el
+      const endColumn = ec <= 0 ? ec + 1 : ec
+
+      return new monaco.Range(startLineNumber, startColumn, endLineNumber, endColumn)
+    }
+
+    // Shape 2
+    const start = r.start as Record<string, unknown> | undefined
+    const end = r.end as Record<string, unknown> | undefined
+    if (
+      start &&
+      end &&
+      typeof start.line === 'number' &&
+      typeof start.character === 'number' &&
+      typeof end.line === 'number' &&
+      typeof end.character === 'number'
+    ) {
+      return new monaco.Range(
+        (start.line as number) + 1,
+        (start.character as number) + 1,
+        (end.line as number) + 1,
+        (end.character as number) + 1
+      )
+    }
+
+    return null
   }
 
   /**
