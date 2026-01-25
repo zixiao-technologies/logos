@@ -98,6 +98,14 @@ declare namespace vscode {
 }
 ```
 
+#### 3.3.1 兼容性 Stub 清单
+
+以下 API 目前为兼容性 Stub，实现仅用于避免扩展崩溃，后续需要补全真实功能：
+
+- `CodeAction`
+- `CodeActionKind`
+- `CodeActionTriggerKind`
+
 ### 3.4 Extension Manifest (VS Code Manifest)
 
 扩展清单与 VS Code 兼容，支持 `engines.vscode`。必要时可增加 `engines.logos` 作为运行时版本约束。

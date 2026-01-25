@@ -14,6 +14,7 @@ import { useBlameStore } from '@/stores/blame'
 import { useFileHistoryStore } from '@/stores/fileHistory'
 import { getIntelligenceManager, destroyIntelligenceManager } from '@/services/lsp'
 import { initializeMonacoLanguages } from '@/services/monaco/languageConfig'
+import { registerExtensionProviders } from '@/services/extensions/extensionProviders'
 import { InlineBlameProvider, injectBlameStyles, BlameHoverCard, FileHistoryPanel } from '@/components/GitLens'
 
 // 初始化自定义语言支持（Vue, JSX, TSX）
@@ -33,6 +34,69 @@ const fileHistoryStore = useFileHistoryStore()
 const editorContainer = ref<HTMLElement | null>(null)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 const models = new Map<string, monaco.editor.ITextModel>()
+
+function toExtensionRange(range: monaco.IRange) {
+  return {
+    start: { line: range.startLineNumber - 1, character: range.startColumn - 1 },
+    end: { line: range.endLineNumber - 1, character: range.endColumn - 1 }
+  }
+}
+
+function notifyDocumentOpen(model: monaco.editor.ITextModel, content: string) {
+  if (!window.electronAPI?.extensions?.notifyDocumentOpen) {
+    return
+  }
+  void window.electronAPI.extensions.notifyDocumentOpen({
+    uri: model.uri.fsPath,
+    languageId: model.getLanguageId(),
+    content,
+    version: model.getVersionId()
+  })
+}
+
+function notifyDocumentChange(model: monaco.editor.ITextModel, content: string) {
+  if (!window.electronAPI?.extensions?.notifyDocumentChange) {
+    return
+  }
+  void window.electronAPI.extensions.notifyDocumentChange({
+    uri: model.uri.fsPath,
+    languageId: model.getLanguageId(),
+    content,
+    version: model.getVersionId()
+  })
+}
+
+function notifyDocumentClose(model: monaco.editor.ITextModel) {
+  if (!window.electronAPI?.extensions?.notifyDocumentClose) {
+    return
+  }
+  void window.electronAPI.extensions.notifyDocumentClose({ uri: model.uri.fsPath })
+}
+
+function notifyActiveEditorChange(model: monaco.editor.ITextModel | null) {
+  if (!window.electronAPI?.extensions?.notifyActiveEditorChange) {
+    return
+  }
+  if (!model) {
+    void window.electronAPI.extensions.notifyActiveEditorChange({ uri: null })
+    return
+  }
+  const selection = editor?.getSelection()
+  void window.electronAPI.extensions.notifyActiveEditorChange({
+    uri: model.uri.fsPath,
+    selection: selection ? toExtensionRange(selection) : undefined
+  })
+}
+
+function notifySelectionChange(model: monaco.editor.ITextModel | null, selection: monaco.IRange) {
+  if (!window.electronAPI?.extensions?.notifySelectionChange || !model) {
+    return
+  }
+  void window.electronAPI.extensions.notifySelectionChange({
+    uri: model.uri.fsPath,
+    selection: toExtensionRange(selection)
+  })
+}
 
 // 断点装饰器 ID 映射
 const breakpointDecorations = new Map<string, string[]>() // filePath -> decoration IDs
@@ -69,6 +133,8 @@ function getOrCreateModel(path: string, content: string, language: string): mona
 
   models.set(path, model)
 
+  notifyDocumentOpen(model, content)
+
   // 为新打开的文件调用 openFile (用于 Daemon 语言)
   intelligenceManager.openFile(path, content)
 
@@ -79,6 +145,7 @@ function getOrCreateModel(path: string, content: string, language: string): mona
 function disposeModel(path: string) {
   const model = models.get(path)
   if (model) {
+    notifyDocumentClose(model)
     model.dispose()
     models.delete(path)
 
@@ -139,6 +206,8 @@ function initEditor() {
     glyphMargin: true // 启用断点边距
   })
 
+  registerExtensionProviders()
+
   // 监听内容变化
   editor.onDidChangeModelContent(() => {
     if (activeTab.value && editor) {
@@ -147,6 +216,11 @@ function initEditor() {
 
       // 同步到代码智能服务
       intelligenceManager.syncFile(activeTab.value.path, content)
+
+      const model = editor.getModel()
+      if (model) {
+        notifyDocumentChange(model, content)
+      }
 
       // 防抖更新诊断
       if (diagnosticsTimer) {
@@ -168,6 +242,11 @@ function initEditor() {
         line: e.position.lineNumber,
         column: e.position.column
       })
+
+      const selection = editor?.getSelection()
+      if (selection) {
+        notifySelectionChange(editor?.getModel() ?? null, selection)
+      }
 
       // 防抖更新 blame 信息
       if (blameTimer) {
@@ -356,6 +435,7 @@ function loadTabIntoEditor(tab: typeof activeTab.value) {
   }
 
   editor.focus()
+  notifyActiveEditorChange(model)
 
   // 加载 blame 数据
   loadBlameForFile(tab.path)
@@ -512,6 +592,8 @@ function registerGitLensContextMenuActions(editorInstance: monaco.editor.IStanda
 watch(() => editorStore.activeTabId, (newId) => {
   if (newId && activeTab.value) {
     loadTabIntoEditor(activeTab.value)
+  } else {
+    notifyActiveEditorChange(null)
   }
 })
 

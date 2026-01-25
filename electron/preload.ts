@@ -119,6 +119,83 @@ interface ExtensionHostMessage {
   message: string
 }
 
+interface ExtensionPosition {
+  line: number
+  character: number
+}
+
+interface ExtensionRange {
+  start: ExtensionPosition
+  end: ExtensionPosition
+}
+
+interface ExtensionDocumentPayload {
+  uri: string
+  languageId: string
+  content: string
+  version: number
+}
+
+interface ExtensionDocumentChangePayload {
+  uri: string
+  languageId: string
+  content: string
+  version: number
+}
+
+interface ExtensionCompletionRequest {
+  uri: string
+  position: ExtensionPosition
+  context?: {
+    triggerKind?: number
+    triggerCharacter?: string
+  }
+}
+
+interface ExtensionCompletionItem {
+  label: string
+  kind?: number
+  detail?: string
+  documentation?: string
+  insertText?: string
+  insertTextFormat?: number
+  textEdit?: {
+    range: ExtensionRange
+    newText: string
+  }
+}
+
+interface ExtensionCompletionResult {
+  items: ExtensionCompletionItem[]
+  isIncomplete?: boolean
+}
+
+interface ExtensionInlineCompletionRequest {
+  uri: string
+  position: ExtensionPosition
+}
+
+interface ExtensionInlineCompletionItem {
+  insertText: string
+  range?: ExtensionRange
+}
+
+interface ExtensionInlineCompletionResult {
+  items: ExtensionInlineCompletionItem[]
+}
+
+interface ExtensionMarketplaceItem {
+  id: string
+  publisher: string
+  name: string
+  displayName?: string
+  description?: string
+  version?: string
+  downloads?: number
+  iconUrl?: string
+  downloadUrl?: string
+}
+
 // ============ Commit Analysis 相关类型 ============
 
 /** Diff hunk */
@@ -533,6 +610,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('extensions:setEnabled', extensionId, enabled),
     setWorkspaceRoot: (rootPath: string | null): Promise<boolean> =>
       ipcRenderer.invoke('extensions:setWorkspaceRoot', rootPath),
+    notifyDocumentOpen: (payload: ExtensionDocumentPayload): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:notifyDocumentOpen', payload),
+    notifyDocumentChange: (payload: ExtensionDocumentChangePayload): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:notifyDocumentChange', payload),
+    notifyDocumentClose: (payload: { uri: string }): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:notifyDocumentClose', payload),
+    notifyActiveEditorChange: (payload: { uri: string | null; selection?: ExtensionRange }): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:notifyActiveEditorChange', payload),
+    notifySelectionChange: (payload: { uri: string; selection: ExtensionRange }): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:notifySelectionChange', payload),
+    provideCompletions: (payload: ExtensionCompletionRequest): Promise<ExtensionCompletionResult> =>
+      ipcRenderer.invoke('extensions:provideCompletions', payload),
+    provideInlineCompletions: (payload: ExtensionInlineCompletionRequest): Promise<ExtensionInlineCompletionResult> =>
+      ipcRenderer.invoke('extensions:provideInlineCompletions', payload),
+    executeCommand: (payload: { command: string; args?: unknown[] }): Promise<unknown> =>
+      ipcRenderer.invoke('extensions:executeCommand', payload),
+    marketplaceSearch: (query: string, size?: number): Promise<ExtensionMarketplaceItem[]> =>
+      ipcRenderer.invoke('extensions:marketplaceSearch', query, size),
     openRoot: (): Promise<string> => ipcRenderer.invoke('extensions:openRoot'),
     getHostStatus: (): Promise<ExtensionHostState> => ipcRenderer.invoke('extensions:hostStatus'),
     startHost: (): Promise<ExtensionHostState> => ipcRenderer.invoke('extensions:hostStart'),
@@ -2103,6 +2198,15 @@ declare global {
         uninstall: (extensionId: string) => Promise<boolean>
         setEnabled: (extensionId: string, enabled: boolean) => Promise<boolean>
         setWorkspaceRoot: (rootPath: string | null) => Promise<boolean>
+        notifyDocumentOpen: (payload: ExtensionDocumentPayload) => Promise<boolean>
+        notifyDocumentChange: (payload: ExtensionDocumentChangePayload) => Promise<boolean>
+        notifyDocumentClose: (payload: { uri: string }) => Promise<boolean>
+        notifyActiveEditorChange: (payload: { uri: string | null; selection?: ExtensionRange }) => Promise<boolean>
+        notifySelectionChange: (payload: { uri: string; selection: ExtensionRange }) => Promise<boolean>
+        provideCompletions: (payload: ExtensionCompletionRequest) => Promise<ExtensionCompletionResult>
+        provideInlineCompletions: (payload: ExtensionInlineCompletionRequest) => Promise<ExtensionInlineCompletionResult>
+        executeCommand: (payload: { command: string; args?: unknown[] }) => Promise<unknown>
+        marketplaceSearch: (query: string, size?: number) => Promise<ExtensionMarketplaceItem[]>
         openRoot: () => Promise<string>
         getHostStatus: () => Promise<ExtensionHostState>
         startHost: () => Promise<ExtensionHostState>

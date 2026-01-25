@@ -1,6 +1,15 @@
 import { promises as fs } from 'fs'
 import path from 'path'
-import { setWorkspaceRoot } from './vscode'
+import {
+  setWorkspaceRoot,
+  setCommandActivationHandler,
+  registerExtensionDescription,
+  updateExtensionActivation,
+  createExtensionContext,
+  vscodeApi
+} from './vscode'
+
+const minimatch = require('minimatch') as (value: string, pattern: string, options?: { dot?: boolean }) => boolean
 
 interface ExtensionManifest {
   name?: string
@@ -10,12 +19,20 @@ interface ExtensionManifest {
   description?: string
   main?: string
   activationEvents?: string[]
+  contributes?: Record<string, unknown>
 }
 
 interface ExtensionContext {
   subscriptions: Array<{ dispose: () => void }>
   extensionPath: string
+  storagePath?: string
   globalStoragePath: string
+  extensionUri: unknown
+  globalStorageUri: unknown
+  globalState: { get: <T>(key: string, defaultValue?: T) => T | undefined; update: (key: string, value: unknown) => Promise<void> }
+  workspaceState: { get: <T>(key: string, defaultValue?: T) => T | undefined; update: (key: string, value: unknown) => Promise<void> }
+  secrets: { get: (key: string) => Promise<string | undefined>; store: (key: string, value: string) => Promise<void>; delete: (key: string) => Promise<void> }
+  asAbsolutePath: (relativePath: string) => string
 }
 
 interface ActiveExtension {
@@ -23,7 +40,19 @@ interface ActiveExtension {
   manifest: ExtensionManifest
   extensionPath: string
   context: ExtensionContext
+  exports?: unknown
   deactivate?: () => unknown
+}
+
+interface ExtensionEntry {
+  id: string
+  manifest: ExtensionManifest
+  extensionPath: string
+  enabled: boolean
+  active: boolean
+  exports?: unknown
+  deactivate?: () => unknown
+  context?: ExtensionContext
 }
 
 interface ExtensionStateFile {
@@ -41,7 +70,7 @@ function sanitizeExtensionId(id: string): string {
   return id.replace(/[^a-zA-Z0-9._-]/g, '-')
 }
 
-function shouldActivate(manifest: ExtensionManifest): boolean {
+function shouldActivateOnStartup(manifest: ExtensionManifest): boolean {
   const activationEvents = manifest.activationEvents ?? []
   if (activationEvents.length === 0) {
     return true
@@ -49,21 +78,34 @@ function shouldActivate(manifest: ExtensionManifest): boolean {
   return activationEvents.includes('*') || activationEvents.includes('onStartupFinished')
 }
 
+function hasActivationEvent(manifest: ExtensionManifest, predicate: (event: string) => boolean): boolean {
+  return (manifest.activationEvents ?? []).some(predicate)
+}
+
 export class ExtensionHost {
   private extensionsRoot: string
   private activeExtensions = new Map<string, ActiveExtension>()
+  private extensions = new Map<string, ExtensionEntry>()
 
   constructor(extensionsRoot: string) {
     this.extensionsRoot = extensionsRoot
+    setCommandActivationHandler(this.activateByCommand.bind(this))
   }
 
   async start(): Promise<void> {
     await this.loadExtensions()
+    await this.activateOnStartup()
+    const root = process.env.LOGOS_WORKSPACE_ROOT
+    if (root) {
+      await this.activateByWorkspaceContains(root)
+    }
   }
 
   async reload(): Promise<void> {
     await this.deactivateAll()
+    this.extensions.clear()
     await this.loadExtensions()
+    await this.activateOnStartup()
   }
 
   async shutdown(): Promise<void> {
@@ -72,6 +114,17 @@ export class ExtensionHost {
 
   setWorkspaceRoot(root: string | null): void {
     setWorkspaceRoot(root)
+    if (root) {
+      this.activateByWorkspaceContains(root).catch((error) => {
+        console.error('[extension-host] workspaceContains activation failed:', error)
+      })
+    }
+  }
+
+  handleDocumentOpened(languageId: string): void {
+    this.activateByLanguage(languageId).catch((error) => {
+      console.error('[extension-host] onLanguage activation failed:', error)
+    })
   }
 
   private async loadExtensions(): Promise<void> {
@@ -100,40 +153,143 @@ export class ExtensionHost {
         const id = buildExtensionId(manifest, entry.name)
         const enabled = state.extensions[id]?.enabled ?? true
 
-        if (!enabled) {
-          continue
-        }
-
         if (!manifest.main) {
           console.warn(`[extension-host] missing main entry: ${id}`)
           continue
         }
 
-        const mainPath = path.resolve(extensionPath, manifest.main)
-        const moduleExports = require(mainPath) as {
-          activate?: (context: ExtensionContext) => unknown
-          deactivate?: () => unknown
+        if (!enabled) {
+          continue
         }
 
-        const context = await this.createContext(id, extensionPath)
+        registerExtensionDescription(id, extensionPath, manifest as Record<string, unknown>)
 
-        if (shouldActivate(manifest) && typeof moduleExports.activate === 'function') {
-          await Promise.resolve(moduleExports.activate(context))
-          console.log(`[extension-host] activated: ${id}`)
-        } else {
-          console.log(`[extension-host] loaded: ${id}`)
-        }
-
-        this.activeExtensions.set(id, {
+        this.extensions.set(id, {
           id,
           manifest,
           extensionPath,
-          context,
-          deactivate: moduleExports.deactivate
+          enabled,
+          active: false
         })
       } catch (error) {
         console.error(`[extension-host] failed to load extension ${entry.name}:`, error)
       }
+    }
+  }
+
+  private async activateOnStartup(): Promise<void> {
+    const activations = Array.from(this.extensions.values()).filter(entry => shouldActivateOnStartup(entry.manifest))
+    for (const entry of activations) {
+      await this.activateExtension(entry)
+    }
+  }
+
+  private async activateByCommand(command: string): Promise<void> {
+    const targets = Array.from(this.extensions.values()).filter(entry =>
+      hasActivationEvent(entry.manifest, event => event === `onCommand:${command}`)
+    )
+    for (const entry of targets) {
+      await this.activateExtension(entry)
+    }
+  }
+
+  private async activateByLanguage(languageId: string): Promise<void> {
+    const targets = Array.from(this.extensions.values()).filter(entry =>
+      hasActivationEvent(entry.manifest, event => event === `onLanguage:${languageId}`)
+    )
+    for (const entry of targets) {
+      await this.activateExtension(entry)
+    }
+  }
+
+  private async activateByWorkspaceContains(root: string): Promise<void> {
+    const targets = Array.from(this.extensions.values()).filter(entry =>
+      hasActivationEvent(entry.manifest, event => event.startsWith('workspaceContains:'))
+    )
+
+    for (const entry of targets) {
+      const patterns = (entry.manifest.activationEvents ?? [])
+        .filter(event => event.startsWith('workspaceContains:'))
+        .map(event => event.replace('workspaceContains:', '').trim())
+
+      for (const pattern of patterns) {
+        if (!pattern) {
+          continue
+        }
+        if (await this.workspaceContains(root, pattern)) {
+          await this.activateExtension(entry)
+          break
+        }
+      }
+    }
+  }
+
+  private async workspaceContains(root: string, pattern: string): Promise<boolean> {
+    const normalizedRoot = root
+    const queue: string[] = [normalizedRoot]
+
+    while (queue.length > 0) {
+      const current = queue.shift()
+      if (!current) {
+        continue
+      }
+      const entries = await fs.readdir(current, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name === 'node_modules' || entry.name === '.git') {
+          continue
+        }
+        const entryPath = path.join(current, entry.name)
+        const relativePath = path.relative(normalizedRoot, entryPath).replace(/\\/g, '/')
+        if (entry.isDirectory()) {
+          queue.push(entryPath)
+          continue
+        }
+        if (minimatch(relativePath, pattern, { dot: true })) {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
+  private async activateExtension(entry: ExtensionEntry): Promise<void> {
+    if (entry.active) {
+      return
+    }
+
+    try {
+      const mainPath = path.resolve(entry.extensionPath, entry.manifest.main ?? '')
+      const moduleExports = require(mainPath) as {
+        activate?: (context: ExtensionContext) => unknown
+        deactivate?: () => unknown
+      }
+
+      const context = await this.createContext(entry.id, entry.extensionPath)
+
+      if (typeof moduleExports.activate === 'function') {
+        const exportsValue = await Promise.resolve(moduleExports.activate(context))
+        entry.exports = exportsValue
+      }
+
+      entry.active = true
+      entry.deactivate = moduleExports.deactivate
+      entry.context = context
+
+      updateExtensionActivation(entry.id, true, entry.exports)
+
+      this.activeExtensions.set(entry.id, {
+        id: entry.id,
+        manifest: entry.manifest,
+        extensionPath: entry.extensionPath,
+        context,
+        exports: entry.exports,
+        deactivate: entry.deactivate
+      })
+
+      console.log(`[extension-host] activated: ${entry.id}`)
+    } catch (error) {
+      console.error(`[extension-host] failed to activate extension ${entry.id}:`, error)
     }
   }
 
@@ -145,6 +301,11 @@ export class ExtensionHost {
         }
         for (const disposable of extension.context.subscriptions) {
           disposable.dispose()
+        }
+        updateExtensionActivation(id, false)
+        const entry = this.extensions.get(id)
+        if (entry) {
+          entry.active = false
         }
         console.log(`[extension-host] deactivated: ${id}`)
       } catch (error) {
@@ -173,11 +334,19 @@ export class ExtensionHost {
   private async createContext(id: string, extensionPath: string): Promise<ExtensionContext> {
     const storagePath = path.join(this.extensionsRoot, '.storage', sanitizeExtensionId(id))
     await fs.mkdir(storagePath, { recursive: true })
+    const storage = createExtensionContext(storagePath)
 
     return {
       subscriptions: [],
       extensionPath,
-      globalStoragePath: storagePath
+      storagePath,
+      globalStoragePath: storagePath,
+      extensionUri: vscodeApi.Uri.file(extensionPath),
+      globalStorageUri: vscodeApi.Uri.file(storagePath),
+      globalState: storage.globalState,
+      workspaceState: storage.workspaceState,
+      secrets: storage.secrets,
+      asAbsolutePath: (relativePath: string) => path.join(extensionPath, relativePath)
     }
   }
 }

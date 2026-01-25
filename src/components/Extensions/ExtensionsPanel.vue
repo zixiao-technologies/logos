@@ -6,6 +6,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useExtensionsStore } from '@/stores/extensions'
 import { useNotificationStore } from '@/stores/notification'
+import type { ExtensionMarketplaceItem } from '@/types'
 
 // 导入 MDUI 图标
 import '@mdui/icons/refresh.js'
@@ -37,6 +38,12 @@ const openVsxResults = ref<OpenVsxExtension[]>([])
 const openVsxLoading = ref(false)
 const openVsxError = ref<string | null>(null)
 const openVsxInstalling = ref<Record<string, boolean>>({})
+
+const marketplaceQuery = ref('')
+const marketplaceResults = ref<ExtensionMarketplaceItem[]>([])
+const marketplaceLoading = ref(false)
+const marketplaceError = ref<string | null>(null)
+const marketplaceInstalling = ref<Record<string, boolean>>({})
 
 const hostStatusText = computed(() => {
   switch (extensionsStore.hostStatus.status) {
@@ -163,6 +170,58 @@ const installFromOpenVsx = async (extension: OpenVsxExtension) => {
   }
 }
 
+const searchMarketplace = async () => {
+  if (!marketplaceQuery.value.trim()) {
+    marketplaceResults.value = []
+    marketplaceError.value = null
+    return
+  }
+
+  if (!window.electronAPI?.extensions?.marketplaceSearch) {
+    marketplaceError.value = 'Marketplace API 不可用'
+    return
+  }
+
+  marketplaceLoading.value = true
+  marketplaceError.value = null
+
+  try {
+    marketplaceResults.value = await window.electronAPI.extensions.marketplaceSearch(marketplaceQuery.value, 10)
+  } catch (error) {
+    marketplaceError.value = (error as Error).message
+  } finally {
+    marketplaceLoading.value = false
+  }
+}
+
+const installFromMarketplace = async (extension: ExtensionMarketplaceItem) => {
+  if (!window.electronAPI?.extensions?.installFromUrl) {
+    return
+  }
+
+  if (!extension.downloadUrl) {
+    notificationStore.error('无法解析 Marketplace VSIX 下载地址')
+    return
+  }
+
+  if (marketplaceInstalling.value[extension.id]) {
+    return
+  }
+
+  marketplaceInstalling.value = { ...marketplaceInstalling.value, [extension.id]: true }
+
+  try {
+    const installed = await window.electronAPI.extensions.installFromUrl(extension.downloadUrl)
+    notificationStore.success(`已安装扩展: ${installed.displayName || installed.name}`)
+    await extensionsStore.refresh()
+  } catch (error) {
+    notificationStore.error((error as Error).message || '安装失败')
+  } finally {
+    const { [extension.id]: _removed, ...rest } = marketplaceInstalling.value
+    marketplaceInstalling.value = rest
+  }
+}
+
 onMounted(() => {
   extensionsStore.init()
 })
@@ -237,6 +296,57 @@ onMounted(() => {
           <mdui-button-icon class="danger" title="卸载" @click="handleUninstall(extension.id)">
             <mdui-icon-delete></mdui-icon-delete>
           </mdui-button-icon>
+        </div>
+      </div>
+    </div>
+
+    <div class="marketplace-section">
+      <div class="section-header">
+        <span class="section-title">VS Code Marketplace</span>
+      </div>
+      <div class="search-bar">
+        <mdui-text-field
+          v-model="marketplaceQuery"
+          placeholder="搜索 VS Code Marketplace 扩展"
+          variant="outlined"
+          clearable
+          @keydown.enter="searchMarketplace"
+        >
+          <mdui-icon-search slot="icon"></mdui-icon-search>
+        </mdui-text-field>
+        <mdui-button variant="outlined" @click="searchMarketplace" :disabled="marketplaceLoading">
+          搜索
+        </mdui-button>
+      </div>
+
+      <div v-if="marketplaceLoading" class="loading">
+        <mdui-circular-progress></mdui-circular-progress>
+      </div>
+
+      <div v-else-if="marketplaceError" class="open-vsx-error">
+        {{ marketplaceError }}
+      </div>
+
+      <div v-else-if="marketplaceResults.length > 0" class="open-vsx-results">
+        <div v-for="item in marketplaceResults" :key="item.id" class="open-vsx-item">
+          <div class="open-vsx-info">
+            <img v-if="item.iconUrl" class="extension-icon" :src="item.iconUrl" alt="" />
+            <div class="open-vsx-title">{{ item.displayName || item.name }}</div>
+            <div class="open-vsx-meta">
+              {{ item.id }} · v{{ item.version || 'latest' }}
+            </div>
+            <div class="open-vsx-desc">
+              {{ item.description || '暂无描述' }}
+            </div>
+          </div>
+          <mdui-button
+            variant="filled"
+            :disabled="marketplaceInstalling[item.id] || !item.downloadUrl"
+            @click="installFromMarketplace(item)"
+          >
+            <mdui-icon-download></mdui-icon-download>
+            安装
+          </mdui-button>
         </div>
       </div>
     </div>
@@ -447,6 +557,14 @@ onMounted(() => {
 }
 
 .open-vsx-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--mdui-color-outline-variant);
+  padding-top: 12px;
+}
+
+.marketplace-section {
   display: flex;
   flex-direction: column;
   gap: 10px;

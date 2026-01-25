@@ -51,6 +51,18 @@ interface ExtensionManifest {
   categories?: string[]
 }
 
+interface MarketplaceExtensionInfo {
+  id: string
+  publisher: string
+  name: string
+  displayName?: string
+  description?: string
+  version?: string
+  downloads?: number
+  iconUrl?: string
+  downloadUrl?: string
+}
+
 interface ExtensionStateEntry {
   enabled: boolean
   installedAt?: number
@@ -65,6 +77,8 @@ let hostProcess: ChildProcess | null = null
 let hostState: ExtensionHostState = { status: 'stopped' }
 let getMainWindow: () => BrowserWindow | null = () => null
 let workspaceRoot: string | null = null
+let requestCounter = 0
+const pendingHostRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
 
 const STATE_SCHEMA_VERSION = 1
 
@@ -124,7 +138,7 @@ function handleHostMessage(message: unknown): void {
     return
   }
 
-  const typedMessage = message as { type?: string; pid?: number; level?: string; message?: string }
+  const typedMessage = message as { type?: string; pid?: number; level?: string; message?: string; requestId?: string; ok?: boolean; payload?: unknown; error?: string; url?: string }
 
   if (typedMessage.type === 'ready') {
     hostState = {
@@ -145,6 +159,25 @@ function handleHostMessage(message: unknown): void {
       })
     }
   }
+
+  if (typedMessage.type === 'openExternal' && typeof typedMessage.url === 'string') {
+    shell.openExternal(typedMessage.url).catch((error) => {
+      console.error('[extension-host] openExternal failed:', error)
+    })
+  }
+
+  if (typedMessage.type === 'rpcResponse' && typedMessage.requestId) {
+    const pending = pendingHostRequests.get(typedMessage.requestId)
+    if (!pending) {
+      return
+    }
+    pendingHostRequests.delete(typedMessage.requestId)
+    if (typedMessage.ok) {
+      pending.resolve(typedMessage.payload)
+    } else {
+      pending.reject(new Error(typedMessage.error || 'Extension host request failed'))
+    }
+  }
 }
 
 function handleHostExit(code: number | null, signal: NodeJS.Signals | null): void {
@@ -153,11 +186,19 @@ function handleHostExit(code: number | null, signal: NodeJS.Signals | null): voi
     status: 'stopped',
     error: code === 0 ? undefined : `Exited with code ${code ?? 'null'} (${signal ?? 'no-signal'})`
   }
+  for (const [requestId, pending] of pendingHostRequests.entries()) {
+    pending.reject(new Error('Extension host exited'))
+    pendingHostRequests.delete(requestId)
+  }
   publishHostState()
 }
 
 function handleHostError(error: Error): void {
   hostState = { status: 'error', error: error.message }
+  for (const [requestId, pending] of pendingHostRequests.entries()) {
+    pending.reject(error)
+    pendingHostRequests.delete(requestId)
+  }
   publishHostState()
 }
 
@@ -165,6 +206,18 @@ function requestHostReload(): void {
   if (hostProcess && hostState.status === 'running') {
     hostProcess.send?.({ type: 'reloadExtensions' })
   }
+}
+
+async function requestHost<T>(payload: Record<string, unknown>): Promise<T> {
+  if (!hostProcess || hostState.status !== 'running') {
+    throw new Error('Extension host is not running')
+  }
+  requestCounter += 1
+  const requestId = `req_${Date.now()}_${requestCounter}`
+  return new Promise<T>((resolve, reject) => {
+    pendingHostRequests.set(requestId, { resolve, reject })
+    hostProcess?.send?.({ ...payload, requestId })
+  })
 }
 
 async function setWorkspaceRoot(rootPath: string | null): Promise<void> {
@@ -335,6 +388,79 @@ async function downloadFile(url: string, destination: string): Promise<void> {
   })
 }
 
+async function postJson<T>(url: string, payload: unknown, headers: Record<string, string>): Promise<T> {
+  return await new Promise<T>((resolve, reject) => {
+    const request = https.request(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...headers
+      }
+    }, (response) => {
+      const chunks: Buffer[] = []
+      response.on('data', (chunk: Buffer) => chunks.push(chunk))
+      response.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf-8')
+        if (response.statusCode && response.statusCode >= 400) {
+          reject(new Error(`Marketplace request failed (${response.statusCode})`))
+          return
+        }
+        try {
+          resolve(JSON.parse(raw) as T)
+        } catch (error) {
+          reject(error)
+        }
+      })
+    })
+    request.on('error', reject)
+    request.write(JSON.stringify(payload))
+    request.end()
+  })
+}
+
+function extractMarketplaceExtensions(payload: unknown): MarketplaceExtensionInfo[] {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+  const results = payload as { results?: Array<{ extensions?: unknown[] }> }
+  const extensions = results.results?.[0]?.extensions as Array<Record<string, unknown>> | undefined
+  if (!extensions) {
+    return []
+  }
+
+  return extensions.map((extension) => {
+    const publisher = (extension.publisher as { publisherName?: string })?.publisherName || 'unknown'
+    const name = (extension.extensionName as string) || 'unknown'
+    const displayName = extension.displayName as string | undefined
+    const description = extension.shortDescription as string | undefined
+    const versions = (extension.versions as Array<Record<string, unknown>> | undefined) || []
+    const latest = versions[0] || {}
+    const version = latest.version as string | undefined
+    const files = (latest.files as Array<Record<string, unknown>> | undefined) || []
+
+    const iconAsset = files.find(file => file.assetType === 'Microsoft.VisualStudio.Services.Icons.Default')
+    const vsixAsset = files.find(file => file.assetType === 'Microsoft.VisualStudio.Services.VSIXPackage')
+
+    const statistics = (extension.statistics as Array<Record<string, unknown>> | undefined) || []
+    const installs = statistics.find(stat => stat.statisticName === 'install')
+    const downloads = typeof installs?.value === 'number' ? installs.value : undefined
+
+    const downloadUrl = (vsixAsset?.source as string | undefined) || (version ? `https://marketplace.visualstudio.com/_apis/public/gallery/publishers/${publisher}/vsextensions/${name}/${version}/vspackage` : undefined)
+
+    return {
+      id: `${publisher}.${name}`,
+      publisher,
+      name,
+      displayName,
+      description,
+      version,
+      downloads,
+      iconUrl: iconAsset?.source as string | undefined,
+      downloadUrl
+    }
+  })
+}
+
 export async function installVsixFromUrl(url: string): Promise<LocalExtensionInfo> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'logos-vsix-download-'))
   const tempFile = path.join(tempDir, 'extension.vsix')
@@ -345,6 +471,39 @@ export async function installVsixFromUrl(url: string): Promise<LocalExtensionInf
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true })
   }
+}
+
+export async function searchMarketplace(query: string, size = 10): Promise<MarketplaceExtensionInfo[]> {
+  if (!query.trim()) {
+    return []
+  }
+
+  const payload = {
+    filters: [
+      {
+        criteria: [
+          { filterType: 10, value: query },
+          { filterType: 8, value: 'Microsoft.VisualStudio.Code' }
+        ],
+        pageNumber: 1,
+        pageSize: size,
+        sortBy: 0,
+        sortOrder: 0
+      }
+    ],
+    flags: 387
+  }
+
+  const response = await postJson<Record<string, unknown>>(
+    'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery',
+    payload,
+    {
+      Accept: 'application/json;api-version=7.2-preview.1',
+      'User-Agent': 'Logos'
+    }
+  )
+
+  return extractMarketplaceExtensions(response)
 }
 
 export async function installVsix(vsixPath: string): Promise<LocalExtensionInfo> {
@@ -498,6 +657,10 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
     return await installVsixFromUrl(url)
   })
 
+  ipcMain.handle('extensions:marketplaceSearch', async (_event, query: string, size?: number) => {
+    return await searchMarketplace(query, size)
+  })
+
   ipcMain.handle('extensions:uninstall', async (_event, extensionId: string) => {
     await uninstallExtension(extensionId)
     return true
@@ -511,6 +674,56 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
   ipcMain.handle('extensions:setWorkspaceRoot', async (_event, rootPath: string | null) => {
     await setWorkspaceRoot(rootPath)
     return true
+  })
+
+  ipcMain.handle('extensions:notifyDocumentOpen', async (_event, payload: { uri: string; languageId: string; content: string; version: number }) => {
+    hostProcess?.send?.({ type: 'documentOpen', document: payload })
+    return true
+  })
+
+  ipcMain.handle('extensions:notifyDocumentChange', async (_event, payload: { uri: string; languageId: string; content: string; version: number }) => {
+    hostProcess?.send?.({ type: 'documentChange', document: payload })
+    return true
+  })
+
+  ipcMain.handle('extensions:notifyDocumentClose', async (_event, payload: { uri: string }) => {
+    hostProcess?.send?.({ type: 'documentClose', uri: payload.uri })
+    return true
+  })
+
+  ipcMain.handle('extensions:notifyActiveEditorChange', async (_event, payload: { uri: string | null; selection?: { start: { line: number; character: number }; end: { line: number; character: number } } }) => {
+    hostProcess?.send?.({ type: 'activeEditorChange', uri: payload.uri, selection: payload.selection })
+    return true
+  })
+
+  ipcMain.handle('extensions:notifySelectionChange', async (_event, payload: { uri: string; selection: { start: { line: number; character: number }; end: { line: number; character: number } } }) => {
+    hostProcess?.send?.({ type: 'selectionChange', uri: payload.uri, selection: payload.selection })
+    return true
+  })
+
+  ipcMain.handle('extensions:provideCompletions', async (_event, payload: { uri: string; position: { line: number; character: number }; context?: { triggerKind?: number; triggerCharacter?: string } }) => {
+    try {
+      return await requestHost({ type: 'provideCompletions', payload })
+    } catch {
+      return { items: [], isIncomplete: false }
+    }
+  })
+
+  ipcMain.handle('extensions:provideInlineCompletions', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideInlineCompletions', payload })
+    } catch {
+      return { items: [] }
+    }
+  })
+
+  ipcMain.handle('extensions:executeCommand', async (_event, payload: { command: string; args?: unknown[] }) => {
+    try {
+      return await requestHost({ type: 'executeCommand', payload })
+    } catch (error) {
+      console.error('[extension-host] executeCommand failed:', error)
+      return null
+    }
   })
 
   ipcMain.handle('extensions:openRoot', async () => {
