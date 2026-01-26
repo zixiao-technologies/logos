@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, protocol, shell } from 'electron'
 import { join, resolve, sep } from 'path'
+import * as fsSync from 'fs'
 import * as Sentry from '@sentry/electron/main'
 import { registerFileSystemHandlers, registerFileWatcherHandlers, cleanupFileWatchers } from './services/fileService'
 import { registerGitHandlers } from './services/gitService'
@@ -32,17 +33,37 @@ protocol.registerSchemesAsPrivileged([
 
 function registerExtensionProtocol() {
   const extensionsRoot = resolve(app.getPath('userData'), 'extensions')
-  const normalizedRoot = process.platform === 'win32' ? extensionsRoot.toLowerCase() : extensionsRoot
+  let normalizedRoot = extensionsRoot
 
   protocol.registerFileProtocol('logos-extension', (request, callback) => {
-    const rawPath = request.url.replace('logos-extension://', '')
+    let rawPath = request.url.replace('logos-extension://', '')
+    if (rawPath.startsWith('local-file/')) {
+      rawPath = rawPath.replace(/^local-file/, '')
+    } else if (!rawPath.startsWith('/')) {
+      rawPath = `/${rawPath}`
+    }
     const decodedPath = decodeURIComponent(rawPath)
     const resolvedPath = resolve(decodedPath)
-    const normalizedPath = process.platform === 'win32' ? resolvedPath.toLowerCase() : resolvedPath
+    let normalizedPath = resolvedPath
+
+    try {
+      normalizedPath = fsSync.realpathSync(resolvedPath)
+    } catch {
+      // Keep resolvedPath when file is missing.
+    }
+
+    try {
+      normalizedRoot = fsSync.realpathSync(extensionsRoot)
+    } catch {
+      normalizedRoot = extensionsRoot
+    }
+
+    const normalizedPathForCompare = process.platform === 'win32' ? normalizedPath.toLowerCase() : normalizedPath
+    const normalizedRootForCompare = process.platform === 'win32' ? normalizedRoot.toLowerCase() : normalizedRoot
 
     const isAllowed =
-      normalizedPath === normalizedRoot ||
-      normalizedPath.startsWith(normalizedRoot + sep)
+      normalizedPathForCompare === normalizedRootForCompare ||
+      normalizedPathForCompare.startsWith(normalizedRootForCompare + sep)
 
     if (!isAllowed) {
       callback({ error: -10 })

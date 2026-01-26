@@ -49,6 +49,12 @@ interface ExtensionManifest {
   description?: string
   icon?: string
   categories?: string[]
+  contributes?: {
+    viewsContainers?: {
+      activitybar?: Array<{ id: string; title?: string; icon?: string }>
+    }
+    views?: Record<string, Array<{ id: string; name?: string }>>
+  }
 }
 
 interface MarketplaceExtensionInfo {
@@ -71,6 +77,25 @@ interface ExtensionStateEntry {
 interface ExtensionStateFile {
   schemaVersion: 1
   extensions: Record<string, ExtensionStateEntry>
+}
+
+interface ExtensionViewContainer {
+  id: string
+  title: string
+  iconPath?: string
+  extensionId?: string
+}
+
+interface ExtensionView {
+  id: string
+  name: string
+  containerId: string
+  extensionId?: string
+}
+
+interface ExtensionUiContributions {
+  containers: ExtensionViewContainer[]
+  views: ExtensionView[]
 }
 
 let hostProcess: ChildProcess | null = null
@@ -138,7 +163,7 @@ function handleHostMessage(message: unknown): void {
     return
   }
 
-  const typedMessage = message as { type?: string; pid?: number; level?: string; message?: string; requestId?: string; ok?: boolean; payload?: unknown; error?: string; url?: string }
+  const typedMessage = message as { type?: string; pid?: number; level?: string; message?: unknown; requestId?: string; ok?: boolean; payload?: unknown; error?: string; url?: string; uiType?: string; handle?: string; html?: string }
 
   if (typedMessage.type === 'ready') {
     hostState = {
@@ -160,9 +185,35 @@ function handleHostMessage(message: unknown): void {
     }
   }
 
+  if (typedMessage.type === 'webviewMessage' && typedMessage.handle) {
+    const window = getMainWindow()
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('extensions:webviewMessage', {
+        handle: typedMessage.handle,
+        message: typedMessage.message
+      })
+    }
+  }
+
+  if (typedMessage.type === 'webviewHtml' && typedMessage.handle && typeof typedMessage.html === 'string') {
+    const window = getMainWindow()
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('extensions:webviewHtml', {
+        handle: typedMessage.handle,
+        html: typedMessage.html
+      })
+    }
+  }
+
   if (typedMessage.type === 'openExternal' && typeof typedMessage.url === 'string') {
     shell.openExternal(typedMessage.url).catch((error) => {
       console.error('[extension-host] openExternal failed:', error)
+    })
+  }
+
+  if (typedMessage.type === 'uiRequest' && typedMessage.requestId && typedMessage.uiType) {
+    handleUiRequest(typedMessage.requestId, typedMessage.uiType, typedMessage.payload).catch((error) => {
+      hostProcess?.send?.({ type: 'uiResponse', requestId: typedMessage.requestId, ok: false, error: error?.message || 'UI request failed' })
     })
   }
 
@@ -178,6 +229,68 @@ function handleHostMessage(message: unknown): void {
       pending.reject(new Error(typedMessage.error || 'Extension host request failed'))
     }
   }
+}
+
+function sendUiResponse(requestId: string, ok: boolean, result?: unknown, error?: string): void {
+  hostProcess?.send?.({ type: 'uiResponse', requestId, ok, result, error })
+}
+
+async function handleUiRequest(requestId: string, uiType: string, payload?: unknown): Promise<void> {
+  const window = getMainWindow()
+  if (!window || window.isDestroyed()) {
+    sendUiResponse(requestId, false, undefined, 'Main window unavailable')
+    return
+  }
+
+  if (uiType === 'inputBox') {
+    const inputPayload = payload as { prompt?: string; placeHolder?: string; value?: string }
+    const promptText = inputPayload.prompt || inputPayload.placeHolder || 'Enter value'
+    const defaultValue = inputPayload.value ?? ''
+    const script = `window.prompt(${JSON.stringify(promptText)}, ${JSON.stringify(defaultValue)})`
+    const result = await window.webContents.executeJavaScript(script, true)
+    sendUiResponse(requestId, true, result ?? undefined)
+    return
+  }
+
+  if (uiType === 'quickPick') {
+    const pickPayload = payload as { items?: Array<{ label: string; description?: string }>; placeHolder?: string; canPickMany?: boolean }
+    const items = pickPayload.items ?? []
+    const header = pickPayload.placeHolder || 'Select an item'
+    const lines = items.map((item, index) => {
+      const description = item.description ? ` - ${item.description}` : ''
+      return `${index + 1}. ${item.label}${description}`
+    }).join('\n')
+    const footer = pickPayload.canPickMany ? 'Enter numbers separated by commas:' : 'Enter number:'
+    const promptText = `${header}\n${lines}\n${footer}`
+    const rawInput = await window.webContents.executeJavaScript(`window.prompt(${JSON.stringify(promptText)}, '')`, true)
+    if (!rawInput || typeof rawInput !== 'string') {
+      sendUiResponse(requestId, true, undefined)
+      return
+    }
+    const trimmed = rawInput.trim()
+    if (!trimmed) {
+      sendUiResponse(requestId, true, undefined)
+      return
+    }
+    if (pickPayload.canPickMany) {
+      const indices = trimmed
+        .split(',')
+        .map(part => Number.parseInt(part.trim(), 10) - 1)
+        .filter(index => Number.isFinite(index) && index >= 0 && index < items.length)
+      sendUiResponse(requestId, true, indices.length > 0 ? indices : undefined)
+      return
+    }
+    const index = Number.parseInt(trimmed, 10) - 1
+    if (Number.isFinite(index) && index >= 0 && index < items.length) {
+      sendUiResponse(requestId, true, index)
+      return
+    }
+    const matched = items.findIndex(item => item.label === trimmed)
+    sendUiResponse(requestId, true, matched >= 0 ? matched : undefined)
+    return
+  }
+
+  sendUiResponse(requestId, false, undefined, `Unsupported UI request: ${uiType}`)
 }
 
 function handleHostExit(code: number | null, signal: NodeJS.Signals | null): void {
@@ -620,6 +733,69 @@ export async function listLocalExtensions(): Promise<LocalExtensionInfo[]> {
   return results
 }
 
+export async function listUiContributions(): Promise<ExtensionUiContributions> {
+  const root = await ensureExtensionsRoot()
+  const state = await loadExtensionState()
+  const entries = await fs.readdir(root, { withFileTypes: true })
+  const containers: ExtensionViewContainer[] = []
+  const views: ExtensionView[] = []
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue
+    }
+    if (entry.name.startsWith('.')) {
+      continue
+    }
+
+    const extensionPath = path.join(root, entry.name)
+    const manifestPath = path.join(extensionPath, 'package.json')
+
+    try {
+      const manifestRaw = await fs.readFile(manifestPath, 'utf-8')
+      const manifest = JSON.parse(manifestRaw) as ExtensionManifest
+      const { id: extensionId } = buildExtensionId(manifest)
+      const enabled = state.extensions[extensionId]?.enabled ?? true
+      if (!enabled) {
+        continue
+      }
+
+      const activitybar = manifest.contributes?.viewsContainers?.activitybar ?? []
+      for (const container of activitybar) {
+        const iconPath = container.icon ? await resolveIconPath(extensionPath, container.icon) : undefined
+        containers.push({
+          id: container.id,
+          title: container.title || container.id,
+          iconPath,
+          extensionId
+        })
+      }
+
+      const contributesViews = manifest.contributes?.views ?? {}
+      for (const [containerId, viewEntries] of Object.entries(contributesViews)) {
+        if (!Array.isArray(viewEntries)) {
+          continue
+        }
+        for (const viewEntry of viewEntries) {
+          if (!viewEntry?.id) {
+            continue
+          }
+          views.push({
+            id: viewEntry.id,
+            name: viewEntry.name || viewEntry.id,
+            containerId,
+            extensionId
+          })
+        }
+      }
+    } catch (error) {
+      console.warn('[extension-host] failed to read UI contributions:', error)
+    }
+  }
+
+  return { containers, views }
+}
+
 export function registerExtensionHandlers(getWindow: () => BrowserWindow | null): void {
   getMainWindow = getWindow
 
@@ -647,6 +823,10 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
 
   ipcMain.handle('extensions:listLocal', async () => {
     return await listLocalExtensions()
+  })
+
+  ipcMain.handle('extensions:listUiContributions', async () => {
+    return await listUiContributions()
   })
 
   ipcMain.handle('extensions:installVsix', async (_event, vsixPath: string) => {
@@ -714,6 +894,144 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
       return await requestHost({ type: 'provideInlineCompletions', payload })
     } catch {
       return { items: [] }
+    }
+  })
+
+  ipcMain.handle('extensions:provideHover', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideHover', payload })
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('extensions:provideDefinition', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideDefinition', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideReferences', async (_event, payload: { uri: string; position: { line: number; character: number }; context?: { includeDeclaration?: boolean } }) => {
+    try {
+      return await requestHost({ type: 'provideReferences', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideImplementation', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideImplementation', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideTypeDefinition', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideTypeDefinition', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideDeclaration', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'provideDeclaration', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideDocumentSymbols', async (_event, payload: { uri: string }) => {
+    try {
+      return await requestHost({ type: 'provideDocumentSymbols', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideSignatureHelp', async (_event, payload: { uri: string; position: { line: number; character: number }; context?: { triggerKind?: number; triggerCharacter?: string; isRetrigger?: boolean } }) => {
+    try {
+      return await requestHost({ type: 'provideSignatureHelp', payload })
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('extensions:provideRenameEdits', async (_event, payload: { uri: string; position: { line: number; character: number }; newName: string }) => {
+    try {
+      return await requestHost({ type: 'provideRenameEdits', payload })
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('extensions:prepareRename', async (_event, payload: { uri: string; position: { line: number; character: number } }) => {
+    try {
+      return await requestHost({ type: 'prepareRename', payload })
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('extensions:provideCodeActions', async (_event, payload: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context?: { only?: string; triggerKind?: number } }) => {
+    try {
+      return await requestHost({ type: 'provideCodeActions', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideFormattingEdits', async (_event, payload: { uri: string; options?: { tabSize: number; insertSpaces: boolean } }) => {
+    try {
+      return await requestHost({ type: 'provideFormattingEdits', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideRangeFormattingEdits', async (_event, payload: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; options?: { tabSize: number; insertSpaces: boolean } }) => {
+    try {
+      return await requestHost({ type: 'provideRangeFormattingEdits', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:provideOnTypeFormattingEdits', async (_event, payload: { uri: string; position: { line: number; character: number }; ch: string; options?: { tabSize: number; insertSpaces: boolean } }) => {
+    try {
+      return await requestHost({ type: 'provideOnTypeFormattingEdits', payload })
+    } catch {
+      return []
+    }
+  })
+
+  ipcMain.handle('extensions:resolveWebviewView', async (_event, payload: { viewId: string }) => {
+    try {
+      return await requestHost({ type: 'resolveWebviewView', payload })
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('extensions:postWebviewMessage', async (_event, payload: { handle: string; message: unknown }) => {
+    try {
+      await requestHost({ type: 'webviewPostMessage', payload })
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle('extensions:disposeWebviewView', async (_event, payload: { handle: string }) => {
+    try {
+      await requestHost({ type: 'webviewDispose', payload })
+      return true
+    } catch {
+      return false
     }
   })
 

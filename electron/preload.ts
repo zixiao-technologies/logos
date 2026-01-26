@@ -184,6 +184,161 @@ interface ExtensionInlineCompletionResult {
   items: ExtensionInlineCompletionItem[]
 }
 
+interface ExtensionLocation {
+  uri: string
+  range: ExtensionRange
+}
+
+interface ExtensionHoverRequest {
+  uri: string
+  position: ExtensionPosition
+}
+
+interface ExtensionHoverResult {
+  contents: string[]
+  range?: ExtensionRange
+}
+
+interface ExtensionDefinitionRequest {
+  uri: string
+  position: ExtensionPosition
+}
+
+interface ExtensionReferencesRequest {
+  uri: string
+  position: ExtensionPosition
+  context?: {
+    includeDeclaration?: boolean
+  }
+}
+
+interface ExtensionDocumentSymbol {
+  name: string
+  detail?: string
+  kind: number
+  range: ExtensionRange
+  selectionRange: ExtensionRange
+  children?: ExtensionDocumentSymbol[]
+}
+
+interface ExtensionSignatureHelpRequest {
+  uri: string
+  position: ExtensionPosition
+  context?: {
+    triggerKind?: number
+    triggerCharacter?: string
+    isRetrigger?: boolean
+  }
+}
+
+interface ExtensionSignatureHelpResult {
+  signatures: Array<{
+    label: string
+    documentation?: string
+    parameters?: Array<{
+      label: string | [number, number]
+      documentation?: string
+    }>
+  }>
+  activeSignature?: number
+  activeParameter?: number
+}
+
+interface ExtensionTextEdit {
+  range: ExtensionRange
+  newText: string
+}
+
+interface ExtensionWorkspaceEdit {
+  edits: Array<{
+    uri: string
+    edits: ExtensionTextEdit[]
+  }>
+}
+
+interface ExtensionRenameRequest {
+  uri: string
+  position: ExtensionPosition
+  newName: string
+}
+
+interface ExtensionPrepareRenameResult {
+  range: ExtensionRange
+  placeholder?: string
+}
+
+interface ExtensionCodeAction {
+  title: string
+  kind?: string
+  isPreferred?: boolean
+  edit?: ExtensionWorkspaceEdit
+  command?: { command: string; title: string; arguments?: unknown[] }
+}
+
+interface ExtensionCodeActionRequest {
+  uri: string
+  range: ExtensionRange
+  context?: {
+    only?: string
+    triggerKind?: number
+  }
+}
+
+interface ExtensionFormattingRequest {
+  uri: string
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+interface ExtensionRangeFormattingRequest {
+  uri: string
+  range: ExtensionRange
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+interface ExtensionOnTypeFormattingRequest {
+  uri: string
+  position: ExtensionPosition
+  ch: string
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+interface ExtensionViewContainer {
+  id: string
+  title: string
+  iconPath?: string
+  extensionId?: string
+}
+
+interface ExtensionView {
+  id: string
+  name: string
+  containerId: string
+  extensionId?: string
+}
+
+interface ExtensionUiContributions {
+  containers: ExtensionViewContainer[]
+  views: ExtensionView[]
+}
+
+interface ExtensionWebviewResolveResult {
+  handle: string
+  html: string
+  options?: {
+    enableScripts?: boolean
+  }
+}
+
+interface ExtensionWebviewMessage {
+  handle: string
+  message: unknown
+}
+
+interface ExtensionWebviewHtml {
+  handle: string
+  html: string
+}
+
 interface ExtensionMarketplaceItem {
   id: string
   publisher: string
@@ -624,6 +779,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('extensions:provideCompletions', payload),
     provideInlineCompletions: (payload: ExtensionInlineCompletionRequest): Promise<ExtensionInlineCompletionResult> =>
       ipcRenderer.invoke('extensions:provideInlineCompletions', payload),
+    provideHover: (payload: ExtensionHoverRequest): Promise<ExtensionHoverResult | null> =>
+      ipcRenderer.invoke('extensions:provideHover', payload),
+    provideDefinition: (payload: ExtensionDefinitionRequest): Promise<ExtensionLocation[]> =>
+      ipcRenderer.invoke('extensions:provideDefinition', payload),
+    provideReferences: (payload: ExtensionReferencesRequest): Promise<ExtensionLocation[]> =>
+      ipcRenderer.invoke('extensions:provideReferences', payload),
+    provideImplementation: (payload: ExtensionDefinitionRequest): Promise<ExtensionLocation[]> =>
+      ipcRenderer.invoke('extensions:provideImplementation', payload),
+    provideTypeDefinition: (payload: ExtensionDefinitionRequest): Promise<ExtensionLocation[]> =>
+      ipcRenderer.invoke('extensions:provideTypeDefinition', payload),
+    provideDeclaration: (payload: ExtensionDefinitionRequest): Promise<ExtensionLocation[]> =>
+      ipcRenderer.invoke('extensions:provideDeclaration', payload),
+    provideDocumentSymbols: (payload: { uri: string }): Promise<ExtensionDocumentSymbol[]> =>
+      ipcRenderer.invoke('extensions:provideDocumentSymbols', payload),
+    provideSignatureHelp: (payload: ExtensionSignatureHelpRequest): Promise<ExtensionSignatureHelpResult | null> =>
+      ipcRenderer.invoke('extensions:provideSignatureHelp', payload),
+    provideRenameEdits: (payload: ExtensionRenameRequest): Promise<ExtensionWorkspaceEdit | null> =>
+      ipcRenderer.invoke('extensions:provideRenameEdits', payload),
+    prepareRename: (payload: ExtensionDefinitionRequest): Promise<ExtensionPrepareRenameResult | null> =>
+      ipcRenderer.invoke('extensions:prepareRename', payload),
+    provideCodeActions: (payload: ExtensionCodeActionRequest): Promise<ExtensionCodeAction[]> =>
+      ipcRenderer.invoke('extensions:provideCodeActions', payload),
+    provideFormattingEdits: (payload: ExtensionFormattingRequest): Promise<ExtensionTextEdit[]> =>
+      ipcRenderer.invoke('extensions:provideFormattingEdits', payload),
+    provideRangeFormattingEdits: (payload: ExtensionRangeFormattingRequest): Promise<ExtensionTextEdit[]> =>
+      ipcRenderer.invoke('extensions:provideRangeFormattingEdits', payload),
+    provideOnTypeFormattingEdits: (payload: ExtensionOnTypeFormattingRequest): Promise<ExtensionTextEdit[]> =>
+      ipcRenderer.invoke('extensions:provideOnTypeFormattingEdits', payload),
+    listUiContributions: (): Promise<ExtensionUiContributions> =>
+      ipcRenderer.invoke('extensions:listUiContributions'),
+    resolveWebviewView: (payload: { viewId: string }): Promise<ExtensionWebviewResolveResult | null> =>
+      ipcRenderer.invoke('extensions:resolveWebviewView', payload),
+    postWebviewMessage: (payload: ExtensionWebviewMessage): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:postWebviewMessage', payload),
+    disposeWebviewView: (payload: { handle: string }): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:disposeWebviewView', payload),
     executeCommand: (payload: { command: string; args?: unknown[] }): Promise<unknown> =>
       ipcRenderer.invoke('extensions:executeCommand', payload),
     marketplaceSearch: (query: string, size?: number): Promise<ExtensionMarketplaceItem[]> =>
@@ -642,6 +833,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (_: Electron.IpcRendererEvent, payload: ExtensionHostMessage) => callback(payload)
       ipcRenderer.on('extensions:message', handler)
       return () => ipcRenderer.removeListener('extensions:message', handler)
+    },
+    onWebviewMessage: (callback: (payload: ExtensionWebviewMessage) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: ExtensionWebviewMessage) => callback(payload)
+      ipcRenderer.on('extensions:webviewMessage', handler)
+      return () => ipcRenderer.removeListener('extensions:webviewMessage', handler)
+    },
+    onWebviewHtml: (callback: (payload: ExtensionWebviewHtml) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: ExtensionWebviewHtml) => callback(payload)
+      ipcRenderer.on('extensions:webviewHtml', handler)
+      return () => ipcRenderer.removeListener('extensions:webviewHtml', handler)
     }
   },
 
@@ -2205,6 +2406,24 @@ declare global {
         notifySelectionChange: (payload: { uri: string; selection: ExtensionRange }) => Promise<boolean>
         provideCompletions: (payload: ExtensionCompletionRequest) => Promise<ExtensionCompletionResult>
         provideInlineCompletions: (payload: ExtensionInlineCompletionRequest) => Promise<ExtensionInlineCompletionResult>
+        provideHover: (payload: ExtensionHoverRequest) => Promise<ExtensionHoverResult | null>
+        provideDefinition: (payload: ExtensionDefinitionRequest) => Promise<ExtensionLocation[]>
+        provideReferences: (payload: ExtensionReferencesRequest) => Promise<ExtensionLocation[]>
+        provideImplementation: (payload: ExtensionDefinitionRequest) => Promise<ExtensionLocation[]>
+        provideTypeDefinition: (payload: ExtensionDefinitionRequest) => Promise<ExtensionLocation[]>
+        provideDeclaration: (payload: ExtensionDefinitionRequest) => Promise<ExtensionLocation[]>
+        provideDocumentSymbols: (payload: { uri: string }) => Promise<ExtensionDocumentSymbol[]>
+        provideSignatureHelp: (payload: ExtensionSignatureHelpRequest) => Promise<ExtensionSignatureHelpResult | null>
+        provideRenameEdits: (payload: ExtensionRenameRequest) => Promise<ExtensionWorkspaceEdit | null>
+        prepareRename: (payload: ExtensionDefinitionRequest) => Promise<ExtensionPrepareRenameResult | null>
+        provideCodeActions: (payload: ExtensionCodeActionRequest) => Promise<ExtensionCodeAction[]>
+        provideFormattingEdits: (payload: ExtensionFormattingRequest) => Promise<ExtensionTextEdit[]>
+        provideRangeFormattingEdits: (payload: ExtensionRangeFormattingRequest) => Promise<ExtensionTextEdit[]>
+        provideOnTypeFormattingEdits: (payload: ExtensionOnTypeFormattingRequest) => Promise<ExtensionTextEdit[]>
+        listUiContributions: () => Promise<ExtensionUiContributions>
+        resolveWebviewView: (payload: { viewId: string }) => Promise<ExtensionWebviewResolveResult | null>
+        postWebviewMessage: (payload: ExtensionWebviewMessage) => Promise<boolean>
+        disposeWebviewView: (payload: { handle: string }) => Promise<boolean>
         executeCommand: (payload: { command: string; args?: unknown[] }) => Promise<unknown>
         marketplaceSearch: (query: string, size?: number) => Promise<ExtensionMarketplaceItem[]>
         openRoot: () => Promise<string>
@@ -2214,6 +2433,8 @@ declare global {
         restartHost: () => Promise<ExtensionHostState>
         onHostStatus: (callback: (state: ExtensionHostState) => void) => () => void
         onMessage: (callback: (payload: ExtensionHostMessage) => void) => () => void
+        onWebviewMessage: (callback: (payload: ExtensionWebviewMessage) => void) => () => void
+        onWebviewHtml: (callback: (payload: ExtensionWebviewHtml) => void) => () => void
       }
 
       // 反馈上报

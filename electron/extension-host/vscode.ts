@@ -36,6 +36,82 @@ type InlineCompletionProviderEntry = {
   provider: InlineCompletionItemProvider
 }
 
+type LocationLink = {
+  targetUri: Uri | string
+  targetRange: Range
+  targetSelectionRange?: Range
+}
+
+type HoverProviderEntry = {
+  selector: DocumentSelector
+  provider: HoverProvider
+}
+
+type DefinitionProviderEntry = {
+  selector: DocumentSelector
+  provider: DefinitionProvider
+}
+
+type ReferenceProviderEntry = {
+  selector: DocumentSelector
+  provider: ReferenceProvider
+}
+
+type ImplementationProviderEntry = {
+  selector: DocumentSelector
+  provider: ImplementationProvider
+}
+
+type TypeDefinitionProviderEntry = {
+  selector: DocumentSelector
+  provider: TypeDefinitionProvider
+}
+
+type DeclarationProviderEntry = {
+  selector: DocumentSelector
+  provider: DeclarationProvider
+}
+
+type DocumentSymbolProviderEntry = {
+  selector: DocumentSelector
+  provider: DocumentSymbolProvider
+}
+
+type SignatureHelpProviderEntry = {
+  selector: DocumentSelector
+  provider: SignatureHelpProvider
+}
+
+type RenameProviderEntry = {
+  selector: DocumentSelector
+  provider: RenameProvider
+}
+
+type CodeActionProviderEntry = {
+  selector: DocumentSelector
+  provider: CodeActionProvider
+}
+
+type FormattingProviderEntry = {
+  selector: DocumentSelector
+  provider: DocumentFormattingEditProvider
+}
+
+type RangeFormattingProviderEntry = {
+  selector: DocumentSelector
+  provider: DocumentRangeFormattingEditProvider
+}
+
+type OnTypeFormattingProviderEntry = {
+  selector: DocumentSelector
+  provider: OnTypeFormattingEditProvider
+}
+
+type WebviewViewProviderEntry = {
+  viewType: string
+  provider: WebviewViewProvider
+}
+
 interface CancellationToken {
   isCancellationRequested: boolean
   onCancellationRequested: (listener: EventListener<void>) => Disposable
@@ -62,6 +138,169 @@ interface InlineCompletionItemProvider {
     context: unknown,
     token: CancellationToken
   ) => InlineCompletionItem[] | InlineCompletionList | Promise<InlineCompletionItem[] | InlineCompletionList | undefined> | undefined
+}
+
+interface HoverProvider {
+  provideHover: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Hover | { contents: unknown; range?: Range } | unknown[] | string | MarkdownString | Promise<unknown> | undefined
+}
+
+interface DefinitionProvider {
+  provideDefinition: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Location | Location[] | LocationLink[] | Promise<Location | Location[] | LocationLink[] | undefined> | undefined
+}
+
+interface ReferenceContext {
+  includeDeclaration?: boolean
+}
+
+interface ReferenceProvider {
+  provideReferences: (
+    document: TextDocument,
+    position: Position,
+    context: ReferenceContext,
+    token: CancellationToken
+  ) => Location[] | Promise<Location[] | undefined> | undefined
+}
+
+interface ImplementationProvider {
+  provideImplementation: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Location | Location[] | LocationLink[] | Promise<Location | Location[] | LocationLink[] | undefined> | undefined
+}
+
+interface TypeDefinitionProvider {
+  provideTypeDefinition: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Location | Location[] | LocationLink[] | Promise<Location | Location[] | LocationLink[] | undefined> | undefined
+}
+
+interface DeclarationProvider {
+  provideDeclaration: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Location | Location[] | LocationLink[] | Promise<Location | Location[] | LocationLink[] | undefined> | undefined
+}
+
+interface DocumentSymbolProvider {
+  provideDocumentSymbols: (
+    document: TextDocument,
+    token: CancellationToken
+  ) => DocumentSymbol[] | SymbolInformation[] | Promise<DocumentSymbol[] | SymbolInformation[] | undefined> | undefined
+}
+
+interface SignatureHelpContext {
+  triggerKind?: number
+  triggerCharacter?: string
+  isRetrigger?: boolean
+}
+
+interface SignatureHelpProvider {
+  provideSignatureHelp: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken,
+    context: SignatureHelpContext
+  ) => SignatureHelp | Promise<SignatureHelp | undefined> | undefined
+}
+
+interface RenameProvider {
+  provideRenameEdits: (
+    document: TextDocument,
+    position: Position,
+    newName: string,
+    token: CancellationToken
+  ) => WorkspaceEdit | Promise<WorkspaceEdit | undefined> | undefined
+  prepareRename?: (
+    document: TextDocument,
+    position: Position,
+    token: CancellationToken
+  ) => Range | { range: Range; placeholder?: string } | Promise<Range | { range: Range; placeholder?: string } | undefined> | undefined
+}
+
+interface FormattingOptions {
+  tabSize: number
+  insertSpaces: boolean
+}
+
+interface CodeActionContext {
+  diagnostics: Diagnostic[]
+  only?: string
+  triggerKind?: number
+}
+
+interface CodeActionProvider {
+  provideCodeActions: (
+    document: TextDocument,
+    range: Range,
+    context: CodeActionContext,
+    token: CancellationToken
+  ) => CodeAction[] | Promise<CodeAction[] | undefined> | undefined
+}
+
+interface DocumentFormattingEditProvider {
+  provideDocumentFormattingEdits: (
+    document: TextDocument,
+    options: FormattingOptions,
+    token: CancellationToken
+  ) => TextEdit[] | Promise<TextEdit[] | undefined> | undefined
+}
+
+interface DocumentRangeFormattingEditProvider {
+  provideDocumentRangeFormattingEdits: (
+    document: TextDocument,
+    range: Range,
+    options: FormattingOptions,
+    token: CancellationToken
+  ) => TextEdit[] | Promise<TextEdit[] | undefined> | undefined
+}
+
+interface OnTypeFormattingEditProvider {
+  provideOnTypeFormattingEdits: (
+    document: TextDocument,
+    position: Position,
+    ch: string,
+    options: FormattingOptions,
+    token: CancellationToken
+  ) => TextEdit[] | Promise<TextEdit[] | undefined> | undefined
+}
+
+interface Webview {
+  html: string
+  options?: { enableScripts?: boolean; enableCommandUris?: boolean; retainContextWhenHidden?: boolean; localResourceRoots?: Uri[] }
+  cspSource: string
+  asWebviewUri: (uri: Uri) => Uri
+  postMessage: (message: unknown) => Promise<boolean>
+  onDidReceiveMessage: (listener: EventListener<unknown>) => Disposable
+}
+
+interface WebviewView {
+  webview: Webview
+  title?: string
+  description?: string
+  show: (preserveFocus?: boolean) => void
+  visible: boolean
+  onDidChangeVisibility: (listener: EventListener<void>) => Disposable
+  onDidDispose: (listener: EventListener<void>) => Disposable
+}
+
+interface WebviewViewProvider {
+  resolveWebviewView: (
+    webviewView: WebviewView,
+    context: unknown,
+    token: CancellationToken
+  ) => void | Promise<void>
 }
 
 interface CompletionList {
@@ -163,9 +402,10 @@ class Uri {
   }
 
   static parse(value: string): Uri {
-    if (value.startsWith('file://')) {
-      const decoded = decodeURI(value.replace('file://', ''))
-      return new Uri('file', decoded)
+    const match = value.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):\/\/(.*)$/)
+    if (match) {
+      const decoded = decodeURI(match[2])
+      return new Uri(match[1], decoded)
     }
     return new Uri('file', value)
   }
@@ -319,6 +559,96 @@ class InlineCompletionList {
   }
 }
 
+class HostWebview implements Webview {
+  private handle: string
+  private _html = ''
+  private onDidReceiveMessageEmitter = new EventEmitter<unknown>()
+
+  options?: { enableScripts?: boolean; enableCommandUris?: boolean; retainContextWhenHidden?: boolean; localResourceRoots?: Uri[] }
+
+  constructor(handle: string) {
+    this.handle = handle
+  }
+
+  get cspSource(): string {
+    return 'logos-extension:'
+  }
+
+  get html(): string {
+    return this._html
+  }
+
+  set html(value: string) {
+    this._html = value ?? ''
+    sendWebviewHtml(this.handle, this._html)
+  }
+
+  asWebviewUri(uri: Uri): Uri {
+    const fsPath = normalizeFsPath(uri)
+    const normalized = fsPath.replace(/\\/g, '/')
+    return Uri.parse(`logos-extension://local-file${encodeURI(normalized)}`)
+  }
+
+  async postMessage(message: unknown): Promise<boolean> {
+    sendWebviewMessage(this.handle, message)
+    return true
+  }
+
+  onDidReceiveMessage = (listener: EventListener<unknown>): Disposable => {
+    return this.onDidReceiveMessageEmitter.event(listener)
+  }
+
+  handleIncomingMessage(message: unknown): void {
+    this.onDidReceiveMessageEmitter.fire(message)
+  }
+
+  dispose(): void {
+    this.onDidReceiveMessageEmitter.dispose()
+  }
+}
+
+class Hover {
+  contents: Array<string | MarkdownString>
+  range?: Range
+
+  constructor(contents: Array<string | MarkdownString>, range?: Range) {
+    this.contents = contents
+    this.range = range
+  }
+}
+
+class ParameterInformation {
+  label: string | [number, number]
+  documentation?: string | MarkdownString
+
+  constructor(label: string | [number, number], documentation?: string | MarkdownString) {
+    this.label = label
+    this.documentation = documentation
+  }
+}
+
+class SignatureInformation {
+  label: string
+  documentation?: string | MarkdownString
+  parameters?: ParameterInformation[]
+
+  constructor(label: string, documentation?: string | MarkdownString) {
+    this.label = label
+    this.documentation = documentation
+    this.parameters = []
+  }
+}
+
+class SignatureHelp {
+  signatures: SignatureInformation[]
+  activeSignature?: number
+  activeParameter?: number
+
+  constructor() {
+    this.signatures = []
+  }
+}
+
 class TextEdit {
   range: Range
   newText: string
@@ -425,6 +755,24 @@ class DocumentLink {
   constructor(range: Range, target?: Uri) {
     this.range = range
     this.target = target
+  }
+}
+
+class DocumentSymbol {
+  name: string
+  detail?: string
+  kind: number
+  range: Range
+  selectionRange: Range
+  children?: DocumentSymbol[]
+
+  constructor(name: string, detail: string | undefined, kind: number, range: Range, selectionRange: Range) {
+    this.name = name
+    this.detail = detail
+    this.kind = kind
+    this.range = range
+    this.selectionRange = selectionRange
+    this.children = []
   }
 }
 
@@ -724,10 +1072,26 @@ const configurationStore = new Map<string, Map<string, unknown>>()
 const diagnosticCollections = new Map<string, Map<string, DiagnosticEntry[]>>()
 const completionProviders = new Map<number, CompletionProviderEntry>()
 const inlineCompletionProviders = new Map<number, InlineCompletionProviderEntry>()
+const hoverProviders = new Map<number, HoverProviderEntry>()
+const definitionProviders = new Map<number, DefinitionProviderEntry>()
+const referenceProviders = new Map<number, ReferenceProviderEntry>()
+const implementationProviders = new Map<number, ImplementationProviderEntry>()
+const typeDefinitionProviders = new Map<number, TypeDefinitionProviderEntry>()
+const declarationProviders = new Map<number, DeclarationProviderEntry>()
+const documentSymbolProviders = new Map<number, DocumentSymbolProviderEntry>()
+const signatureHelpProviders = new Map<number, SignatureHelpProviderEntry>()
+const renameProviders = new Map<number, RenameProviderEntry>()
+const codeActionProviders = new Map<number, CodeActionProviderEntry>()
+const formattingProviders = new Map<number, FormattingProviderEntry>()
+const rangeFormattingProviders = new Map<number, RangeFormattingProviderEntry>()
+const onTypeFormattingProviders = new Map<number, OnTypeFormattingProviderEntry>()
+const webviewViewProviders = new Map<string, WebviewViewProviderEntry>()
+const webviewViewInstances = new Map<string, { viewId: string; webview: HostWebview; onDidDisposeEmitter: EventEmitter<void>; onDidChangeVisibilityEmitter: EventEmitter<void>; view: WebviewView }>()
 const documents = new Map<string, TextDocument>()
 const extensionsRegistry = new Map<string, ExtensionDescription>()
 
 let providerIdCounter = 1
+let webviewHandleCounter = 1
 let workspaceRoot = process.env.LOGOS_WORKSPACE_ROOT || ''
 let activeEditor: TextEditor | undefined
 let activeTerminal: TerminalInstance | undefined
@@ -752,6 +1116,9 @@ const onDidChangeActiveTerminalEmitter = new EventEmitter<TerminalInstance | und
 const onDidChangeActiveColorThemeEmitter = new EventEmitter<{ kind: number }>()
 const onDidChangeTelemetryEnabledEmitter = new EventEmitter<boolean>()
 
+let uiRequestCounter = 0
+const pendingUiRequests = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+
 const tabGroups = {
   all: [] as Array<{ tabs: Array<{ input: unknown; isPreview?: boolean }> }>,
   activeTabGroup: { tabs: [] as Array<{ input: unknown; isPreview?: boolean }> },
@@ -764,10 +1131,34 @@ function sendWindowMessage(level: WindowMessageLevel, message: string): void {
   }
 }
 
+function sendWebviewMessage(handle: string, message: unknown): void {
+  if (process.send) {
+    process.send({ type: 'webviewMessage', handle, message })
+  }
+}
+
+function sendWebviewHtml(handle: string, html: string): void {
+  if (process.send) {
+    process.send({ type: 'webviewHtml', handle, html })
+  }
+}
+
 function sendExternalOpen(target: string): void {
   if (process.send) {
     process.send({ type: 'openExternal', url: target })
   }
+}
+
+async function requestWindowUi<T>(uiType: string, payload: Record<string, unknown>): Promise<T | undefined> {
+  if (!process.send) {
+    return undefined
+  }
+  uiRequestCounter += 1
+  const requestId = `ui_${Date.now()}_${uiRequestCounter}`
+  return await new Promise<T | undefined>((resolve, reject) => {
+    pendingUiRequests.set(requestId, { resolve, reject })
+    process.send?.({ type: 'uiRequest', uiType, requestId, payload })
+  })
 }
 
 function normalizeFsPath(input: unknown): string {
@@ -787,6 +1178,20 @@ function normalizeFsPath(input: unknown): string {
     }
   }
   return ''
+}
+
+function resolveWatcherPattern(globPattern?: string | { base: Uri | string; pattern: string }): { basePath: string; pattern?: string } {
+  if (!globPattern) {
+    return { basePath: workspaceRoot }
+  }
+  if (typeof globPattern === 'string') {
+    return { basePath: workspaceRoot, pattern: globPattern }
+  }
+  if (globPattern && typeof globPattern === 'object' && 'pattern' in globPattern) {
+    const basePath = normalizeFsPath(globPattern.base)
+    return { basePath: basePath || workspaceRoot, pattern: globPattern.pattern }
+  }
+  return { basePath: workspaceRoot }
 }
 
 function matchesSelector(selector: DocumentSelector, document: TextDocument): boolean {
@@ -860,12 +1265,79 @@ class FileSystemWatcher {
   private onDidCreateEmitter = new EventEmitter<Uri>()
   private onDidChangeEmitter = new EventEmitter<Uri>()
   private onDidDeleteEmitter = new EventEmitter<Uri>()
+  private watcher?: fsSync.FSWatcher
+  private basePath: string
+  private pattern?: string
+  private ignoreCreate: boolean
+  private ignoreChange: boolean
+  private ignoreDelete: boolean
 
   onDidCreate = this.onDidCreateEmitter.event
   onDidChange = this.onDidChangeEmitter.event
   onDidDelete = this.onDidDeleteEmitter.event
 
+  constructor(
+    globPattern?: string | { base: Uri | string; pattern: string },
+    ignoreCreateEvents?: boolean,
+    ignoreChangeEvents?: boolean,
+    ignoreDeleteEvents?: boolean
+  ) {
+    const resolved = resolveWatcherPattern(globPattern)
+    this.basePath = resolved.basePath
+    this.pattern = resolved.pattern
+    this.ignoreCreate = Boolean(ignoreCreateEvents)
+    this.ignoreChange = Boolean(ignoreChangeEvents)
+    this.ignoreDelete = Boolean(ignoreDeleteEvents)
+    this.start()
+  }
+
+  private start(): void {
+    if (!this.basePath) {
+      return
+    }
+    try {
+      this.watcher = fsSync.watch(this.basePath, { recursive: true }, (eventType, filename) => {
+        if (!filename) {
+          return
+        }
+        const targetPath = path.join(this.basePath, filename.toString())
+        if (!this.matches(targetPath)) {
+          return
+        }
+        if (eventType === 'rename') {
+          const exists = fsSync.existsSync(targetPath)
+          if (exists && !this.ignoreCreate) {
+            this.onDidCreateEmitter.fire(Uri.file(targetPath))
+          } else if (!exists && !this.ignoreDelete) {
+            this.onDidDeleteEmitter.fire(Uri.file(targetPath))
+          }
+          return
+        }
+        if (!this.ignoreChange) {
+          this.onDidChangeEmitter.fire(Uri.file(targetPath))
+        }
+      })
+    } catch (error) {
+      console.error('[extension-host] file watcher failed:', error)
+    }
+  }
+
+  private matches(targetPath: string): boolean {
+    if (!this.pattern) {
+      return true
+    }
+    const relativePath = path.relative(this.basePath, targetPath).replace(/\\/g, '/')
+    if (relativePath.startsWith('..')) {
+      return false
+    }
+    return minimatch(relativePath, this.pattern, { dot: true })
+  }
+
   dispose(): void {
+    if (this.watcher) {
+      this.watcher.close()
+      this.watcher = undefined
+    }
     this.onDidCreateEmitter.dispose()
     this.onDidChangeEmitter.dispose()
     this.onDidDeleteEmitter.dispose()
@@ -1027,6 +1499,93 @@ const commands = {
   }
 }
 
+function normalizePositionInput(value: unknown): { line: number; character: number } | null {
+  if (value instanceof Position) {
+    return { line: value.line, character: value.character }
+  }
+  if (value && typeof value === 'object') {
+    const record = value as { line?: number; character?: number; lineNumber?: number; column?: number }
+    if (typeof record.line === 'number' && typeof record.character === 'number') {
+      return { line: record.line, character: record.character }
+    }
+    if (typeof record.lineNumber === 'number' && typeof record.column === 'number') {
+      return { line: record.lineNumber - 1, character: record.column - 1 }
+    }
+  }
+  return null
+}
+
+function normalizeRangeInput(value: unknown): { start: { line: number; character: number }; end: { line: number; character: number } } | null {
+  if (value instanceof Range) {
+    return { start: { line: value.start.line, character: value.start.character }, end: { line: value.end.line, character: value.end.character } }
+  }
+  if (value && typeof value === 'object') {
+    const record = value as { start?: { line?: number; character?: number }; end?: { line?: number; character?: number } }
+    if (record.start && record.end && typeof record.start.line === 'number' && typeof record.start.character === 'number' && typeof record.end.line === 'number' && typeof record.end.character === 'number') {
+      return { start: { line: record.start.line, character: record.start.character }, end: { line: record.end.line, character: record.end.character } }
+    }
+  }
+  return null
+}
+
+function hydrateWorkspaceEdit(payload: { edits: Array<{ uri: string; edits: Array<{ range: Range; newText: string }> }> }): WorkspaceEdit {
+  const edit = new WorkspaceEdit()
+  for (const entry of payload.edits) {
+    for (const change of entry.edits) {
+      edit.set(Uri.file(entry.uri), [new TextEdit(change.range, change.newText)])
+    }
+  }
+  return edit
+}
+
+function hydrateDocumentSymbol(payload: { name: string; detail?: string; kind: number; range: Range; selectionRange: Range; children?: unknown[] }): DocumentSymbol {
+  const symbol = new DocumentSymbol(payload.name, payload.detail, payload.kind, payload.range, payload.selectionRange)
+  symbol.children = (payload.children ?? []).map(child => hydrateDocumentSymbol(child as { name: string; detail?: string; kind: number; range: Range; selectionRange: Range; children?: unknown[] }))
+  return symbol
+}
+
+function hydrateSignatureHelp(payload: { signatures: Array<{ label: string; documentation?: string; parameters?: Array<{ label: string | [number, number]; documentation?: string }> }>; activeSignature?: number; activeParameter?: number }): SignatureHelp {
+  const help = new SignatureHelp()
+  help.signatures = payload.signatures.map(signature => {
+    const info = new SignatureInformation(signature.label, signature.documentation)
+    info.parameters = signature.parameters?.map(parameter => new ParameterInformation(parameter.label, parameter.documentation))
+    return info
+  })
+  help.activeSignature = payload.activeSignature
+  help.activeParameter = payload.activeParameter
+  return help
+}
+
+async function executeLocationCommand(type: 'definition' | 'references' | 'implementation' | 'typeDefinition' | 'declaration', uriArg: unknown, positionArg: unknown, context?: ReferenceContext): Promise<Location[]> {
+  const uri = normalizeFsPath(uriArg)
+  const position = normalizePositionInput(positionArg)
+  if (!uri || !position) {
+    return []
+  }
+  const payload = { uri, position, context }
+  let results: Array<{ uri: string; range: Range }> = []
+  switch (type) {
+    case 'definition':
+      results = await provideDefinition(payload)
+      break
+    case 'references':
+      results = await provideReferences({ ...payload, context })
+      break
+    case 'implementation':
+      results = await provideImplementation(payload)
+      break
+    case 'typeDefinition':
+      results = await provideTypeDefinition(payload)
+      break
+    case 'declaration':
+      results = await provideDeclaration(payload)
+      break
+    default:
+      break
+  }
+  return results.map(entry => new Location(Uri.file(entry.uri), entry.range))
+}
+
 const tasks = {
   executeTask: async (task: Task): Promise<TaskExecution> => {
     return new TaskExecution(task)
@@ -1041,18 +1600,81 @@ const chat = {
 }
 
 const builtinCommandFallbacks = new Map<string, unknown>([
-  ['vscode.executeReferenceProvider', []],
-  ['vscode.executeDefinitionProvider', []],
-  ['vscode.executeDeclarationProvider', []],
-  ['vscode.executeTypeDefinitionProvider', []],
-  ['vscode.executeImplementationProvider', []],
-  ['vscode.executeHoverProvider', []],
-  ['vscode.executeDocumentSymbolProvider', []],
+  ['vscode.executeReferenceProvider', async (uri: unknown, position: unknown, context?: ReferenceContext) => executeLocationCommand('references', uri, position, context)],
+  ['vscode.executeDefinitionProvider', async (uri: unknown, position: unknown) => executeLocationCommand('definition', uri, position)],
+  ['vscode.executeDeclarationProvider', async (uri: unknown, position: unknown) => executeLocationCommand('declaration', uri, position)],
+  ['vscode.executeTypeDefinitionProvider', async (uri: unknown, position: unknown) => executeLocationCommand('typeDefinition', uri, position)],
+  ['vscode.executeImplementationProvider', async (uri: unknown, position: unknown) => executeLocationCommand('implementation', uri, position)],
+  ['vscode.executeHoverProvider', async (uri: unknown, position: unknown) => {
+    const uriValue = normalizeFsPath(uri)
+    const pos = normalizePositionInput(position)
+    if (!uriValue || !pos) {
+      return []
+    }
+    const result = await provideHover({ uri: uriValue, position: pos })
+    if (!result) {
+      return []
+    }
+    return [new Hover(result.contents, result.range)]
+  }],
+  ['vscode.executeDocumentSymbolProvider', async (uri: unknown) => {
+    const uriValue = normalizeFsPath(uri)
+    if (!uriValue) {
+      return []
+    }
+    const result = await provideDocumentSymbols({ uri: uriValue })
+    return result.map(symbol => hydrateDocumentSymbol(symbol))
+  }],
   ['vscode.executeWorkspaceSymbolProvider', []],
-  ['vscode.executeCompletionItemProvider', []],
-  ['vscode.executeCodeActionProvider', []],
-  ['vscode.executeRenameProvider', []],
-  ['vscode.executeSignatureHelpProvider', []],
+  ['vscode.executeCompletionItemProvider', async (uri: unknown, position: unknown, context?: CompletionContext) => {
+    const uriValue = normalizeFsPath(uri)
+    const pos = normalizePositionInput(position)
+    if (!uriValue || !pos) {
+      return []
+    }
+    const result = await provideCompletions({ uri: uriValue, position: pos, context })
+    return result.items
+  }],
+  ['vscode.executeCodeActionProvider', async (uri: unknown, range: unknown, context?: CodeActionContext) => {
+    const uriValue = normalizeFsPath(uri)
+    const resolvedRange = normalizeRangeInput(range)
+    if (!uriValue || !resolvedRange) {
+      return []
+    }
+    const result = await provideCodeActions({ uri: uriValue, range: resolvedRange, context })
+    return result.map((action) => {
+      const codeAction = new CodeAction(action.title, action.kind)
+      codeAction.isPreferred = action.isPreferred
+      if (action.edit) {
+        codeAction.edit = hydrateWorkspaceEdit(action.edit)
+      }
+      if (action.command) {
+        codeAction.command = action.command
+      }
+      return codeAction
+    })
+  }],
+  ['vscode.executeRenameProvider', async (uri: unknown, position: unknown, newName: string) => {
+    const uriValue = normalizeFsPath(uri)
+    const pos = normalizePositionInput(position)
+    if (!uriValue || !pos || !newName) {
+      return undefined
+    }
+    const result = await provideRenameEdits({ uri: uriValue, position: pos, newName })
+    if (!result) {
+      return undefined
+    }
+    return hydrateWorkspaceEdit(result)
+  }],
+  ['vscode.executeSignatureHelpProvider', async (uri: unknown, position: unknown, context?: SignatureHelpContext) => {
+    const uriValue = normalizeFsPath(uri)
+    const pos = normalizePositionInput(position)
+    if (!uriValue || !pos) {
+      return undefined
+    }
+    const result = await provideSignatureHelp({ uri: uriValue, position: pos, context })
+    return result ? hydrateSignatureHelp(result) : undefined
+  }],
   ['vscode.openWith', () => undefined],
   ['workbench.action.reloadWindow', () => undefined],
   ['workbench.action.showCommands', () => undefined],
@@ -1072,13 +1694,45 @@ const windowApi = {
     sendWindowMessage('error', message)
     return undefined
   },
-  showInputBox: async (): Promise<string | undefined> => {
-    sendWindowMessage('info', 'showInputBox is not implemented yet.')
-    return undefined
+  showInputBox: async (options?: { value?: string; prompt?: string; placeHolder?: string; password?: boolean }): Promise<string | undefined> => {
+    const result = await requestWindowUi<string>('inputBox', {
+      value: options?.value ?? '',
+      prompt: options?.prompt,
+      placeHolder: options?.placeHolder,
+      password: options?.password ?? false
+    })
+    if (result === null || result === undefined) {
+      return undefined
+    }
+    return String(result)
   },
-  showQuickPick: async (): Promise<string | undefined> => {
-    sendWindowMessage('info', 'showQuickPick is not implemented yet.')
-    return undefined
+  showQuickPick: async <T extends string | { label: string; description?: string; detail?: string }>(
+    items: T[] | Promise<T[]>,
+    options?: { placeHolder?: string; canPickMany?: boolean }
+  ): Promise<T | T[] | undefined> => {
+    const resolved = await Promise.resolve(items)
+    const payloadItems = resolved.map(item => {
+      if (typeof item === 'string') {
+        return { label: item }
+      }
+      return {
+        label: item.label,
+        description: item.description,
+        detail: item.detail
+      }
+    })
+    const selection = await requestWindowUi<number | number[]>('quickPick', {
+      items: payloadItems,
+      placeHolder: options?.placeHolder,
+      canPickMany: options?.canPickMany ?? false
+    })
+    if (selection === null || selection === undefined) {
+      return undefined
+    }
+    if (Array.isArray(selection)) {
+      return selection.map(index => resolved[index]).filter(Boolean)
+    }
+    return resolved[selection]
   },
   createOutputChannel: (name: string) => {
     const log = (level: string, value: string) => {
@@ -1183,7 +1837,12 @@ const windowApi = {
     const webview = {
       html: '',
       options,
-      asWebviewUri: (uri: Uri) => uri,
+      cspSource: 'logos-extension:',
+      asWebviewUri: (uri: Uri) => {
+        const fsPath = normalizeFsPath(uri)
+        const normalized = fsPath.replace(/\\/g, '/')
+        return Uri.parse(`logos-extension://local-file${encodeURI(normalized)}`)
+      },
       postMessage: async () => false,
       onDidReceiveMessage: onDidReceiveMessageEmitter.event
     }
@@ -1197,8 +1856,11 @@ const windowApi = {
   registerUriHandler: (): Disposable => {
     return new Disposable(() => undefined)
   },
-  registerWebviewViewProvider: (): Disposable => {
-    return new Disposable(() => undefined)
+  registerWebviewViewProvider: (viewType: string, provider: WebviewViewProvider): Disposable => {
+    webviewViewProviders.set(viewType, { viewType, provider })
+    return new Disposable(() => {
+      webviewViewProviders.delete(viewType)
+    })
   },
   registerCustomEditorProvider: (): Disposable => {
     return new Disposable(() => undefined)
@@ -1334,8 +1996,13 @@ const workspaceApi = {
     }
     return path.relative(workspaceRoot, fsPath)
   },
-  createFileSystemWatcher: (): FileSystemWatcher => {
-    return new FileSystemWatcher()
+  createFileSystemWatcher: (
+    globPattern?: string | { base: Uri | string; pattern: string },
+    ignoreCreateEvents?: boolean,
+    ignoreChangeEvents?: boolean,
+    ignoreDeleteEvents?: boolean
+  ): FileSystemWatcher => {
+    return new FileSystemWatcher(globPattern, ignoreCreateEvents, ignoreChangeEvents, ignoreDeleteEvents)
   },
   registerTextDocumentContentProvider: (): Disposable => {
     return new Disposable(() => undefined)
@@ -1460,25 +2127,103 @@ const languages = {
       }
     }
   },
-  registerHoverProvider: () => new Disposable(() => undefined),
-  registerDefinitionProvider: () => new Disposable(() => undefined),
-  registerReferenceProvider: () => new Disposable(() => undefined),
-  registerImplementationProvider: () => new Disposable(() => undefined),
-  registerTypeDefinitionProvider: () => new Disposable(() => undefined),
+  registerHoverProvider: (selector: DocumentSelector, provider: HoverProvider): Disposable => {
+    const id = providerIdCounter++
+    hoverProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      hoverProviders.delete(id)
+    })
+  },
+  registerDefinitionProvider: (selector: DocumentSelector, provider: DefinitionProvider): Disposable => {
+    const id = providerIdCounter++
+    definitionProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      definitionProviders.delete(id)
+    })
+  },
+  registerReferenceProvider: (selector: DocumentSelector, provider: ReferenceProvider): Disposable => {
+    const id = providerIdCounter++
+    referenceProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      referenceProviders.delete(id)
+    })
+  },
+  registerImplementationProvider: (selector: DocumentSelector, provider: ImplementationProvider): Disposable => {
+    const id = providerIdCounter++
+    implementationProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      implementationProviders.delete(id)
+    })
+  },
+  registerTypeDefinitionProvider: (selector: DocumentSelector, provider: TypeDefinitionProvider): Disposable => {
+    const id = providerIdCounter++
+    typeDefinitionProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      typeDefinitionProviders.delete(id)
+    })
+  },
   registerCodeLensProvider: () => new Disposable(() => undefined),
-  registerCodeActionProvider: () => new Disposable(() => undefined),
-  registerDocumentFormattingEditProvider: () => new Disposable(() => undefined),
-  registerDocumentRangeFormattingEditProvider: () => new Disposable(() => undefined),
-  registerOnTypeFormattingEditProvider: () => new Disposable(() => undefined),
-  registerDocumentSymbolProvider: () => new Disposable(() => undefined),
+  registerCodeActionProvider: (selector: DocumentSelector, provider: CodeActionProvider): Disposable => {
+    const id = providerIdCounter++
+    codeActionProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      codeActionProviders.delete(id)
+    })
+  },
+  registerDocumentFormattingEditProvider: (selector: DocumentSelector, provider: DocumentFormattingEditProvider): Disposable => {
+    const id = providerIdCounter++
+    formattingProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      formattingProviders.delete(id)
+    })
+  },
+  registerDocumentRangeFormattingEditProvider: (selector: DocumentSelector, provider: DocumentRangeFormattingEditProvider): Disposable => {
+    const id = providerIdCounter++
+    rangeFormattingProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      rangeFormattingProviders.delete(id)
+    })
+  },
+  registerOnTypeFormattingEditProvider: (selector: DocumentSelector, provider: OnTypeFormattingEditProvider): Disposable => {
+    const id = providerIdCounter++
+    onTypeFormattingProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      onTypeFormattingProviders.delete(id)
+    })
+  },
+  registerDocumentSymbolProvider: (selector: DocumentSelector, provider: DocumentSymbolProvider): Disposable => {
+    const id = providerIdCounter++
+    documentSymbolProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      documentSymbolProviders.delete(id)
+    })
+  },
   registerInlayHintsProvider: () => new Disposable(() => undefined),
-  registerSignatureHelpProvider: () => new Disposable(() => undefined),
-  registerRenameProvider: () => new Disposable(() => undefined),
+  registerSignatureHelpProvider: (selector: DocumentSelector, provider: SignatureHelpProvider): Disposable => {
+    const id = providerIdCounter++
+    signatureHelpProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      signatureHelpProviders.delete(id)
+    })
+  },
+  registerRenameProvider: (selector: DocumentSelector, provider: RenameProvider): Disposable => {
+    const id = providerIdCounter++
+    renameProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      renameProviders.delete(id)
+    })
+  },
   registerFoldingRangeProvider: () => new Disposable(() => undefined),
   registerColorProvider: () => new Disposable(() => undefined),
   registerLinkProvider: () => new Disposable(() => undefined),
   registerDocumentHighlightProvider: () => new Disposable(() => undefined),
-  registerDeclarationProvider: () => new Disposable(() => undefined),
+  registerDeclarationProvider: (selector: DocumentSelector, provider: DeclarationProvider): Disposable => {
+    const id = providerIdCounter++
+    declarationProviders.set(id, { selector, provider })
+    return new Disposable(() => {
+      declarationProviders.delete(id)
+    })
+  },
   registerSelectionRangeProvider: () => new Disposable(() => undefined),
   match: (selector: DocumentSelector, document: TextDocument): number => {
     return matchesSelector(selector, document) ? 1 : 0
@@ -1690,10 +2435,30 @@ const CompletionItemKind = {
   TypeParameter: 25
 } as const
 
+const normalizeLanguageTag = (raw: string | undefined): string => {
+  if (!raw) {
+    return 'en'
+  }
+  const base = raw.split('.')[0].trim()
+  if (!base || base.toLowerCase() === 'c' || base.toLowerCase() === 'posix') {
+    return 'en'
+  }
+  const cleaned = base.replace('_', '-')
+  try {
+    const supported = Intl.NumberFormat.supportedLocalesOf([cleaned])
+    if (supported.length > 0) {
+      return supported[0]
+    }
+  } catch {
+    // ignore invalid locale
+  }
+  return 'en'
+}
+
 const env = {
   appName: 'Logos',
   appRoot: process.cwd(),
-  language: process.env.LANG?.split('.')[0] || 'en',
+  language: normalizeLanguageTag(process.env.LANG),
   machineId: crypto.createHash('sha256').update(process.env.HOSTNAME || 'logos').digest('hex'),
   sessionId: crypto.randomUUID(),
   uiKind: 1,
@@ -1804,6 +2569,10 @@ const vscodeApi = {
   CompletionList,
   InlineCompletionItem,
   InlineCompletionList,
+  Hover,
+  SignatureInformation,
+  ParameterInformation,
+  SignatureHelp,
   TextEdit,
   WorkspaceEdit,
   CancellationTokenSource,
@@ -1811,6 +2580,7 @@ const vscodeApi = {
   Location,
   CodeLens,
   DocumentLink,
+  DocumentSymbol,
   SymbolInformation,
   InlayHint,
   CallHierarchyItem,
@@ -1993,6 +2763,154 @@ function serializeInlineCompletionItem(item: InlineCompletionItem): Record<strin
   }
 }
 
+function serializeTextEdit(edit: TextEdit): { range: Range; newText: string } {
+  return {
+    range: edit.range,
+    newText: edit.newText
+  }
+}
+
+function serializeWorkspaceEdit(edit: WorkspaceEdit): { edits: Array<{ uri: string; edits: Array<{ range: Range; newText: string }> }> } {
+  const entries = edit.entries().map(([uri, edits]) => ({
+    uri: uri.fsPath,
+    edits: edits.map(serializeTextEdit)
+  }))
+  return { edits: entries }
+}
+
+function normalizeMarkdown(value: unknown): string {
+  if (value instanceof MarkdownString) {
+    return value.value
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  if (value && typeof value === 'object' && 'value' in value) {
+    return String((value as { value: unknown }).value)
+  }
+  return value ? String(value) : ''
+}
+
+function normalizeHoverResult(result: unknown): { contents: string[]; range?: Range } | null {
+  if (!result) {
+    return null
+  }
+  let contents: unknown
+  let range: Range | undefined
+  if (result instanceof Hover) {
+    contents = result.contents
+    range = result.range
+  } else if (typeof result === 'object' && result && 'contents' in result) {
+    const typed = result as { contents: unknown; range?: Range }
+    contents = typed.contents
+    range = typed.range
+  } else {
+    contents = result
+  }
+
+  const list = Array.isArray(contents) ? contents : [contents]
+  const normalized = list.map(normalizeMarkdown).filter(value => value)
+  if (normalized.length === 0) {
+    return null
+  }
+  return { contents: normalized, range }
+}
+
+function collectLocations(result: unknown, out: Array<{ uri: string; range: Range }>): void {
+  if (!result) {
+    return
+  }
+  if (Array.isArray(result)) {
+    for (const entry of result) {
+      collectLocations(entry, out)
+    }
+    return
+  }
+  if (typeof result === 'object' && result) {
+    if ('targetUri' in result && 'targetRange' in result) {
+      const typed = result as LocationLink
+      const uri = normalizeFsPath(typed.targetUri)
+      const range = typed.targetSelectionRange ?? typed.targetRange
+      if (uri && range) {
+        out.push({ uri, range })
+      }
+      return
+    }
+    if ('uri' in result && 'range' in result) {
+      const typed = result as { uri: Uri | string; range: Range }
+      const uri = normalizeFsPath(typed.uri)
+      if (uri && typed.range) {
+        out.push({ uri, range: typed.range })
+      }
+    }
+  }
+}
+
+function serializeDocumentSymbol(entry: DocumentSymbol | SymbolInformation): {
+  name: string
+  detail?: string
+  kind: number
+  range: Range
+  selectionRange: Range
+  children?: Array<ReturnType<typeof serializeDocumentSymbol>>
+} {
+  if (entry instanceof SymbolInformation) {
+    return {
+      name: entry.name,
+      detail: entry.containerName,
+      kind: entry.kind,
+      range: entry.location.range,
+      selectionRange: entry.location.range,
+      children: []
+    }
+  }
+  const children = entry.children?.map(child => serializeDocumentSymbol(child))
+  return {
+    name: entry.name,
+    detail: entry.detail,
+    kind: entry.kind,
+    range: entry.range,
+    selectionRange: entry.selectionRange,
+    children: children && children.length > 0 ? children : []
+  }
+}
+
+function serializeSignatureHelp(help: SignatureHelp): {
+  signatures: Array<{ label: string; documentation?: string; parameters?: Array<{ label: string | [number, number]; documentation?: string }> }>
+  activeSignature?: number
+  activeParameter?: number
+} {
+  const signatures = (help.signatures ?? []).map((signature) => ({
+    label: signature.label,
+    documentation: signature.documentation ? normalizeMarkdown(signature.documentation) : undefined,
+    parameters: signature.parameters?.map(parameter => ({
+      label: parameter.label,
+      documentation: parameter.documentation ? normalizeMarkdown(parameter.documentation) : undefined
+    }))
+  }))
+  return {
+    signatures,
+    activeSignature: help.activeSignature,
+    activeParameter: help.activeParameter
+  }
+}
+
+function serializeCodeAction(action: CodeAction): {
+  title: string
+  kind?: string
+  isPreferred?: boolean
+  edit?: { edits: Array<{ uri: string; edits: Array<{ range: Range; newText: string }> }> }
+  command?: { command: string; title: string; arguments?: unknown[] }
+} {
+  return {
+    title: action.title,
+    kind: action.kind,
+    isPreferred: action.isPreferred,
+    edit: action.edit ? serializeWorkspaceEdit(action.edit) : undefined,
+    command: action.command
+  }
+}
+
 export async function provideCompletions(payload: { uri: string; position: { line: number; character: number }; context?: CompletionContext }): Promise<{ items: Record<string, unknown>[]; isIncomplete: boolean }> {
   const fsPath = normalizeFsPath(payload.uri)
   const document = documents.get(fsPath)
@@ -2048,6 +2966,415 @@ export async function provideInlineCompletions(payload: { uri: string; position:
   }
 
   return { items }
+}
+
+export async function provideHover(payload: { uri: string; position: { line: number; character: number } }): Promise<{ contents: string[]; range?: Range } | null> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return null
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const contents: string[] = []
+  let range: Range | undefined
+
+  for (const entry of hoverProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideHover(document, position, token))
+    const normalized = normalizeHoverResult(result)
+    if (!normalized) {
+      continue
+    }
+    contents.push(...normalized.contents)
+    if (!range && normalized.range) {
+      range = normalized.range
+    }
+  }
+
+  if (contents.length === 0) {
+    return null
+  }
+  return { contents, range }
+}
+
+export async function provideDefinition(payload: { uri: string; position: { line: number; character: number } }): Promise<Array<{ uri: string; range: Range }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const locations: Array<{ uri: string; range: Range }> = []
+
+  for (const entry of definitionProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideDefinition(document, position, token))
+    collectLocations(result, locations)
+  }
+
+  return locations
+}
+
+export async function provideReferences(payload: { uri: string; position: { line: number; character: number }; context?: ReferenceContext }): Promise<Array<{ uri: string; range: Range }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const locations: Array<{ uri: string; range: Range }> = []
+  const context: ReferenceContext = payload.context ?? {}
+
+  for (const entry of referenceProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideReferences(document, position, context, token))
+    collectLocations(result, locations)
+  }
+
+  return locations
+}
+
+export async function provideImplementation(payload: { uri: string; position: { line: number; character: number } }): Promise<Array<{ uri: string; range: Range }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const locations: Array<{ uri: string; range: Range }> = []
+
+  for (const entry of implementationProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideImplementation(document, position, token))
+    collectLocations(result, locations)
+  }
+
+  return locations
+}
+
+export async function provideTypeDefinition(payload: { uri: string; position: { line: number; character: number } }): Promise<Array<{ uri: string; range: Range }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const locations: Array<{ uri: string; range: Range }> = []
+
+  for (const entry of typeDefinitionProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideTypeDefinition(document, position, token))
+    collectLocations(result, locations)
+  }
+
+  return locations
+}
+
+export async function provideDeclaration(payload: { uri: string; position: { line: number; character: number } }): Promise<Array<{ uri: string; range: Range }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const locations: Array<{ uri: string; range: Range }> = []
+
+  for (const entry of declarationProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideDeclaration(document, position, token))
+    collectLocations(result, locations)
+  }
+
+  return locations
+}
+
+export async function provideDocumentSymbols(payload: { uri: string }): Promise<Array<ReturnType<typeof serializeDocumentSymbol>>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const token = createCancellationToken()
+  const symbols: Array<ReturnType<typeof serializeDocumentSymbol>> = []
+
+  for (const entry of documentSymbolProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideDocumentSymbols(document, token))
+    if (!result || !Array.isArray(result)) {
+      continue
+    }
+    symbols.push(...result.map(item => serializeDocumentSymbol(item as DocumentSymbol | SymbolInformation)))
+  }
+
+  return symbols
+}
+
+export async function provideSignatureHelp(payload: { uri: string; position: { line: number; character: number }; context?: SignatureHelpContext }): Promise<ReturnType<typeof serializeSignatureHelp> | null> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return null
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const context: SignatureHelpContext = payload.context ?? {}
+
+  for (const entry of signatureHelpProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideSignatureHelp(document, position, token, context))
+    if (!result) {
+      continue
+    }
+    const help = result instanceof SignatureHelp ? result : Object.assign(new SignatureHelp(), result)
+    return serializeSignatureHelp(help)
+  }
+
+  return null
+}
+
+export async function provideRenameEdits(payload: { uri: string; position: { line: number; character: number }; newName: string }): Promise<{ edits: Array<{ uri: string; edits: Array<{ range: Range; newText: string }> }> } | null> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return null
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+
+  for (const entry of renameProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideRenameEdits(document, position, payload.newName, token))
+    if (result) {
+      return serializeWorkspaceEdit(result)
+    }
+  }
+
+  return null
+}
+
+export async function prepareRename(payload: { uri: string; position: { line: number; character: number } }): Promise<{ range: Range; placeholder?: string } | null> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return null
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+
+  for (const entry of renameProviders.values()) {
+    if (!matchesSelector(entry.selector, document) || !entry.provider.prepareRename) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.prepareRename(document, position, token))
+    if (!result) {
+      continue
+    }
+    if (result instanceof Range) {
+      return { range: result }
+    }
+    return { range: result.range, placeholder: result.placeholder }
+  }
+
+  return null
+}
+
+export async function provideCodeActions(payload: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; context?: CodeActionContext }): Promise<Array<ReturnType<typeof serializeCodeAction>>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const range = new Range(payload.range.start.line, payload.range.start.character, payload.range.end.line, payload.range.end.character)
+  const token = createCancellationToken()
+  const context: CodeActionContext = { diagnostics: [], ...(payload.context ?? {}) }
+  const actions: Array<ReturnType<typeof serializeCodeAction>> = []
+
+  for (const entry of codeActionProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideCodeActions(document, range, context, token))
+    if (!result || !Array.isArray(result)) {
+      continue
+    }
+    actions.push(...result.map(action => serializeCodeAction(action)))
+  }
+
+  return actions
+}
+
+export async function provideFormattingEdits(payload: { uri: string; options?: FormattingOptions }): Promise<Array<{ range: Range; newText: string }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const token = createCancellationToken()
+  const options: FormattingOptions = payload.options ?? { tabSize: 2, insertSpaces: true }
+  const edits: Array<{ range: Range; newText: string }> = []
+
+  for (const entry of formattingProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideDocumentFormattingEdits(document, options, token))
+    if (!result || !Array.isArray(result)) {
+      continue
+    }
+    edits.push(...result.map(serializeTextEdit))
+  }
+
+  return edits
+}
+
+export async function provideRangeFormattingEdits(payload: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; options?: FormattingOptions }): Promise<Array<{ range: Range; newText: string }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const range = new Range(payload.range.start.line, payload.range.start.character, payload.range.end.line, payload.range.end.character)
+  const token = createCancellationToken()
+  const options: FormattingOptions = payload.options ?? { tabSize: 2, insertSpaces: true }
+  const edits: Array<{ range: Range; newText: string }> = []
+
+  for (const entry of rangeFormattingProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideDocumentRangeFormattingEdits(document, range, options, token))
+    if (!result || !Array.isArray(result)) {
+      continue
+    }
+    edits.push(...result.map(serializeTextEdit))
+  }
+
+  return edits
+}
+
+export async function provideOnTypeFormattingEdits(payload: { uri: string; position: { line: number; character: number }; ch: string; options?: FormattingOptions }): Promise<Array<{ range: Range; newText: string }>> {
+  const fsPath = normalizeFsPath(payload.uri)
+  const document = documents.get(fsPath)
+  if (!document) {
+    return []
+  }
+  const position = new Position(payload.position.line, payload.position.character)
+  const token = createCancellationToken()
+  const options: FormattingOptions = payload.options ?? { tabSize: 2, insertSpaces: true }
+  const edits: Array<{ range: Range; newText: string }> = []
+
+  for (const entry of onTypeFormattingProviders.values()) {
+    if (!matchesSelector(entry.selector, document)) {
+      continue
+    }
+    const result = await Promise.resolve(entry.provider.provideOnTypeFormattingEdits(document, position, payload.ch, options, token))
+    if (!result || !Array.isArray(result)) {
+      continue
+    }
+    edits.push(...result.map(serializeTextEdit))
+  }
+
+  return edits
+}
+
+export async function resolveWebviewView(payload: { viewId: string }): Promise<{ handle: string; html: string; options?: { enableScripts?: boolean } } | null> {
+  const entry = webviewViewProviders.get(payload.viewId)
+  if (!entry) {
+    return null
+  }
+  const handle = `webview_${Date.now()}_${webviewHandleCounter++}`
+  const webview = new HostWebview(handle)
+  const onDidDisposeEmitter = new EventEmitter<void>()
+  const onDidChangeVisibilityEmitter = new EventEmitter<void>()
+  const webviewView: WebviewView = {
+    webview,
+    title: payload.viewId,
+    show: () => undefined,
+    onDidDispose: onDidDisposeEmitter.event,
+    onDidChangeVisibility: onDidChangeVisibilityEmitter.event,
+    visible: true
+  }
+  webviewViewInstances.set(handle, {
+    viewId: payload.viewId,
+    webview,
+    onDidDisposeEmitter,
+    onDidChangeVisibilityEmitter,
+    view: webviewView
+  })
+  webviewView.show = () => {
+    if (webviewView.visible) {
+      return
+    }
+    webviewView.visible = true
+    onDidChangeVisibilityEmitter.fire()
+  }
+
+  const token = createCancellationToken()
+  await Promise.resolve(entry.provider.resolveWebviewView(webviewView, {}, token))
+  onDidChangeVisibilityEmitter.fire()
+
+  return {
+    handle,
+    html: webview.html,
+    options: webview.options
+  }
+}
+
+export async function postWebviewMessage(payload: { handle: string; message: unknown }): Promise<void> {
+  const entry = webviewViewInstances.get(payload.handle)
+  if (!entry) {
+    return
+  }
+  entry.webview.handleIncomingMessage(payload.message)
+}
+
+export async function disposeWebviewView(payload: { handle: string }): Promise<void> {
+  const entry = webviewViewInstances.get(payload.handle)
+  if (!entry) {
+    return
+  }
+  entry.view.visible = false
+  entry.onDidChangeVisibilityEmitter.fire()
+  entry.webview.dispose()
+  entry.onDidDisposeEmitter.fire()
+  webviewViewInstances.delete(payload.handle)
+}
+
+export function handleUiResponse(payload: { requestId: string; ok: boolean; result?: unknown; error?: string }): void {
+  const pending = pendingUiRequests.get(payload.requestId)
+  if (!pending) {
+    return
+  }
+  pendingUiRequests.delete(payload.requestId)
+  if (payload.ok) {
+    pending.resolve(payload.result)
+  } else {
+    pending.reject(new Error(payload.error || 'UI request failed'))
+  }
 }
 
 export { vscodeApi }

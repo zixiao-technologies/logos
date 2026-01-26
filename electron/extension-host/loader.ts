@@ -127,6 +127,14 @@ export class ExtensionHost {
     })
   }
 
+  async handleViewActivated(viewId: string): Promise<void> {
+    try {
+      await this.activateByView(viewId)
+    } catch (error) {
+      console.error('[extension-host] onView activation failed:', error)
+    }
+  }
+
   private async loadExtensions(): Promise<void> {
     if (!this.extensionsRoot) {
       console.warn('[extension-host] extensions root missing')
@@ -221,6 +229,15 @@ export class ExtensionHost {
           break
         }
       }
+    }
+  }
+
+  private async activateByView(viewId: string): Promise<void> {
+    const targets = Array.from(this.extensions.values()).filter(entry =>
+      hasActivationEvent(entry.manifest, event => event === `onView:${viewId}`)
+    )
+    for (const entry of targets) {
+      await this.activateExtension(entry)
     }
   }
 

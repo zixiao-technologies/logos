@@ -90,6 +90,161 @@ export interface ExtensionInlineCompletionResult {
   items: ExtensionInlineCompletionItem[]
 }
 
+export interface ExtensionLocation {
+  uri: string
+  range: ExtensionRange
+}
+
+export interface ExtensionHoverRequest {
+  uri: string
+  position: ExtensionPosition
+}
+
+export interface ExtensionHoverResult {
+  contents: string[]
+  range?: ExtensionRange
+}
+
+export interface ExtensionDefinitionRequest {
+  uri: string
+  position: ExtensionPosition
+}
+
+export interface ExtensionReferencesRequest {
+  uri: string
+  position: ExtensionPosition
+  context?: {
+    includeDeclaration?: boolean
+  }
+}
+
+export interface ExtensionDocumentSymbol {
+  name: string
+  detail?: string
+  kind: number
+  range: ExtensionRange
+  selectionRange: ExtensionRange
+  children?: ExtensionDocumentSymbol[]
+}
+
+export interface ExtensionSignatureHelpRequest {
+  uri: string
+  position: ExtensionPosition
+  context?: {
+    triggerKind?: number
+    triggerCharacter?: string
+    isRetrigger?: boolean
+  }
+}
+
+export interface ExtensionSignatureHelpResult {
+  signatures: Array<{
+    label: string
+    documentation?: string
+    parameters?: Array<{
+      label: string | [number, number]
+      documentation?: string
+    }>
+  }>
+  activeSignature?: number
+  activeParameter?: number
+}
+
+export interface ExtensionTextEdit {
+  range: ExtensionRange
+  newText: string
+}
+
+export interface ExtensionWorkspaceEdit {
+  edits: Array<{
+    uri: string
+    edits: ExtensionTextEdit[]
+  }>
+}
+
+export interface ExtensionRenameRequest {
+  uri: string
+  position: ExtensionPosition
+  newName: string
+}
+
+export interface ExtensionPrepareRenameResult {
+  range: ExtensionRange
+  placeholder?: string
+}
+
+export interface ExtensionCodeAction {
+  title: string
+  kind?: string
+  isPreferred?: boolean
+  edit?: ExtensionWorkspaceEdit
+  command?: { command: string; title: string; arguments?: unknown[] }
+}
+
+export interface ExtensionCodeActionRequest {
+  uri: string
+  range: ExtensionRange
+  context?: {
+    only?: string
+    triggerKind?: number
+  }
+}
+
+export interface ExtensionFormattingRequest {
+  uri: string
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+export interface ExtensionRangeFormattingRequest {
+  uri: string
+  range: ExtensionRange
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+export interface ExtensionOnTypeFormattingRequest {
+  uri: string
+  position: ExtensionPosition
+  ch: string
+  options?: { tabSize: number; insertSpaces: boolean }
+}
+
+export interface ExtensionViewContainer {
+  id: string
+  title: string
+  iconPath?: string
+  extensionId?: string
+}
+
+export interface ExtensionView {
+  id: string
+  name: string
+  containerId: string
+  extensionId?: string
+}
+
+export interface ExtensionUiContributions {
+  containers: ExtensionViewContainer[]
+  views: ExtensionView[]
+}
+
+export interface ExtensionWebviewResolveResult {
+  handle: string
+  html: string
+  options?: {
+    enableScripts?: boolean
+  }
+}
+
+export interface ExtensionWebviewMessage {
+  handle: string
+  message: unknown
+}
+
+export interface ExtensionWebviewHtml {
+  handle: string
+  html: string
+}
+
 export interface ExtensionMarketplaceItem {
   id: string
   publisher: string

@@ -5,6 +5,7 @@
 
 import { computed, onMounted, ref } from 'vue'
 import { useExtensionsStore } from '@/stores/extensions'
+import { useExtensionUiStore } from '@/stores/extensionUi'
 import { useNotificationStore } from '@/stores/notification'
 import type { ExtensionMarketplaceItem } from '@/types'
 
@@ -20,6 +21,7 @@ import '@mdui/icons/download.js'
 
 const extensionsStore = useExtensionsStore()
 const notificationStore = useNotificationStore()
+const extensionUiStore = useExtensionUiStore()
 
 type OpenVsxExtension = {
   namespace: string
@@ -76,10 +78,12 @@ const toggleHost = async () => {
 
 const handleInstall = async () => {
   await extensionsStore.installVsix()
+  await extensionUiStore.refresh()
 }
 
 const handleRefresh = async () => {
   await extensionsStore.refresh()
+  await extensionUiStore.refresh()
 }
 
 const handleOpenRoot = async () => {
@@ -88,6 +92,7 @@ const handleOpenRoot = async () => {
 
 const handleToggle = async (id: string, enabled: boolean) => {
   await extensionsStore.setEnabled(id, enabled)
+  await extensionUiStore.refresh()
 }
 
 const handleUninstall = async (id: string) => {
@@ -96,6 +101,7 @@ const handleUninstall = async (id: string) => {
     return
   }
   await extensionsStore.uninstall(target)
+  await extensionUiStore.refresh()
 }
 
 const toExtensionUrl = (filePath?: string) => {
@@ -103,7 +109,7 @@ const toExtensionUrl = (filePath?: string) => {
     return ''
   }
   const normalized = filePath.replace(/\\/g, '/')
-  return `logos-extension://${encodeURI(normalized)}`
+  return `logos-extension://local-file${encodeURI(normalized)}`
 }
 
 const searchOpenVsx = async () => {
@@ -162,6 +168,7 @@ const installFromOpenVsx = async (extension: OpenVsxExtension) => {
     const installed = await window.electronAPI.extensions.installFromUrl(downloadUrl)
     notificationStore.success(`已安装扩展: ${installed.displayName || installed.name}`)
     await extensionsStore.refresh()
+    await extensionUiStore.refresh()
   } catch (error) {
     notificationStore.error((error as Error).message || '安装失败')
   } finally {
@@ -214,6 +221,7 @@ const installFromMarketplace = async (extension: ExtensionMarketplaceItem) => {
     const installed = await window.electronAPI.extensions.installFromUrl(extension.downloadUrl)
     notificationStore.success(`已安装扩展: ${installed.displayName || installed.name}`)
     await extensionsStore.refresh()
+    await extensionUiStore.refresh()
   } catch (error) {
     notificationStore.error((error as Error).message || '安装失败')
   } finally {
@@ -224,6 +232,7 @@ const installFromMarketplace = async (extension: ExtensionMarketplaceItem) => {
 
 onMounted(() => {
   extensionsStore.init()
+  extensionUiStore.init()
 })
 </script>
 

@@ -14,6 +14,7 @@ import TodoPanel from '@/components/Analysis/TodoPanel.vue'
 import CommitAnalysisPanel from '@/components/Analysis/CommitAnalysisPanel.vue'
 import { FileHistoryPanel } from '@/components/GitLens/FileHistory'
 import ExtensionsPanel from '@/components/Extensions/ExtensionsPanel.vue'
+import ExtensionViewPanel from '@/components/Extensions/ExtensionViewPanel.vue'
 import TelemetryConsentDialog from '@/components/TelemetryConsentDialog.vue'
 import LSPSetupDialog from '@/components/LSPSetupDialog.vue'
 import FeedbackReportDialog from '@/components/FeedbackReportDialog.vue'
@@ -22,6 +23,7 @@ import { DebugSidebarPanel } from '@/components/Debug'
 import { IntelligenceModeIndicator } from '@/components/StatusBar'
 import { GitOperationIndicator } from '@/components/StatusBar'
 import type { IndexingProgress, LanguageServerStatus } from '@/types/intelligence'
+import { useExtensionUiStore } from '@/stores/extensionUi'
 
 // 导入 MDUI 图标
 import '@mdui/icons/folder.js'
@@ -53,6 +55,7 @@ const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const bottomPanelStore = useBottomPanelStore()
 const intelligenceStore = useIntelligenceStore()
+const extensionUiStore = useExtensionUiStore()
 
 // 索引进度状态
 const indexingProgress = ref<IndexingProgress | null>(null)
@@ -106,7 +109,7 @@ const handleIntelligenceModeShortcut = async (event: KeyboardEvent) => {
 // UI 状态
 const sidebarOpen = ref(true)
 const sidebarWidth = ref(260)
-const activeSidebarPanel = ref<'explorer' | 'git' | 'search' | 'debug' | 'todos' | 'commitAnalysis' | 'fileHistory' | 'extensions'>('explorer')
+const activeSidebarPanel = ref('explorer')
 
 // 导航项 (移除终端，改为底部面板)
 const navItems = [
@@ -125,7 +128,7 @@ const toggleTerminalPanel = () => {
 }
 
 // 侧边栏面板项
-const panelItems = [
+const basePanelItems = [
   { id: 'explorer' as const, icon: 'folder', label: '资源管理器' },
   { id: 'git' as const, icon: 'source', label: '源代码管理' },
   { id: 'search' as const, icon: 'search', label: '搜索' },
@@ -135,6 +138,24 @@ const panelItems = [
   { id: 'fileHistory' as const, icon: 'history', label: '文件历史' },
   { id: 'extensions' as const, icon: 'extension', label: '扩展' }
 ]
+
+const panelItems = computed(() => {
+  const extensionPanels = extensionUiStore.containers.map(container => ({
+    id: `ext:${container.id}`,
+    icon: 'extension-custom',
+    iconUrl: extensionUiStore.containerIconUrl(container.id),
+    label: container.title
+  }))
+  return [
+    ...basePanelItems.slice(0, basePanelItems.length - 1),
+    ...extensionPanels,
+    basePanelItems[basePanelItems.length - 1]
+  ]
+})
+
+const activeExtensionContainerId = computed(() => {
+  return activeSidebarPanel.value.startsWith('ext:') ? activeSidebarPanel.value.replace('ext:', '') : null
+})
 
 const currentRoute = computed(() => route.path)
 
@@ -158,7 +179,7 @@ const navigateTo = (path: string, panel?: 'explorer' | 'git' | 'search' | 'todos
   }
 }
 
-const switchPanel = (panel: 'explorer' | 'git' | 'search' | 'debug' | 'todos' | 'commitAnalysis' | 'fileHistory' | 'extensions') => {
+const switchPanel = (panel: string) => {
   if (activeSidebarPanel.value === panel && sidebarOpen.value) {
     sidebarOpen.value = false
   } else {
@@ -185,6 +206,8 @@ onMounted(async () => {
     if (settingsStore.telemetry.hasAsked && settingsStore.telemetry.enabled) {
       window.electronAPI.telemetry?.enable()
     }
+
+    extensionUiStore.init()
 
     // 订阅索引进度
     unsubscribeProgress = window.electronAPI.intelligence.onIndexingProgress((progress) => {
@@ -250,7 +273,8 @@ onUnmounted(() => {
           @click="switchPanel(panel.id)"
           :title="panel.label"
         >
-          <mdui-icon-folder v-if="panel.icon === 'folder'"></mdui-icon-folder>
+          <img v-if="panel.iconUrl" class="extension-activity-icon" :src="panel.iconUrl" alt="" />
+          <mdui-icon-folder v-else-if="panel.icon === 'folder'"></mdui-icon-folder>
           <mdui-icon-source v-else-if="panel.icon === 'source'"></mdui-icon-source>
           <mdui-icon-search v-else-if="panel.icon === 'search'"></mdui-icon-search>
           <mdui-icon-bug-report v-else-if="panel.icon === 'bug-report'"></mdui-icon-bug-report>
@@ -329,6 +353,9 @@ onUnmounted(() => {
 
       <!-- Extensions 面板 -->
       <ExtensionsPanel v-else-if="activeSidebarPanel === 'extensions'" />
+
+      <!-- Extension Views -->
+      <ExtensionViewPanel v-else-if="activeExtensionContainerId" :container-id="activeExtensionContainerId" />
 
       <!-- 侧边栏调整手柄 -->
       <div class="sidebar-resize-handle"></div>
@@ -500,6 +527,12 @@ onUnmounted(() => {
 
 .activity-bar mdui-button-icon:hover {
   background: var(--mdui-color-surface-container-high);
+}
+
+.extension-activity-icon {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
 }
 
 /* 侧边栏 */
