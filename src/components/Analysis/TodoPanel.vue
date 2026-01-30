@@ -100,8 +100,7 @@ const isGroupExpanded = (key: string) => {
 
 // 跳转到 TODO 位置
 const gotoTodo = async (item: TodoItem) => {
-  await editorStore.openFile(item.uri)
-  // TODO: 跳转到具体行号
+  await editorStore.navigateToLocation(item.uri, item.range.startLine, item.range.startColumn)
 }
 
 // 刷新

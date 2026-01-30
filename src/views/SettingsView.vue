@@ -7,6 +7,8 @@
 import { computed, ref, onBeforeUnmount } from 'vue'
 import { useSettingsStore } from '@/stores/settings'
 import { useThemeStore } from '@/stores/theme'
+import { useEditorStore } from '@/stores/editor'
+import { useNotificationStore } from '@/stores/notification'
 import type { CICDProvider } from '@/types/settings'
 
 // 导入图标
@@ -20,6 +22,8 @@ import '@mdui/icons/check.js'
 
 const settingsStore = useSettingsStore()
 const themeStore = useThemeStore()
+const editorStore = useEditorStore()
+const notificationStore = useNotificationStore()
 
 // 壁纸图片列表（从 GitHub 获取）
 const wallpaperImages = [
@@ -86,6 +90,11 @@ const autoSave = computed({
   get: () => settingsStore.editor.autoSave,
   set: (value: boolean) => settingsStore.updateEditor({ autoSave: value })
 })
+
+const clearRecentFiles = () => {
+  editorStore.clearRecentFiles()
+  notificationStore.success('已清除最近文件')
+}
 
 const colorTheme = computed({
   get: () => settingsStore.editor.colorTheme,
@@ -517,6 +526,18 @@ onBeforeUnmount(() => {
           <span class="setting-description">失去焦点时自动保存</span>
         </div>
         <mdui-switch :checked="autoSave" @change="autoSave = !autoSave"></mdui-switch>
+      </div>
+
+      <mdui-divider></mdui-divider>
+
+      <div class="setting-item">
+        <div class="setting-info">
+          <span class="setting-label">最近文件</span>
+          <span class="setting-description">清除最近打开的文件记录</span>
+        </div>
+        <mdui-button variant="outlined" @click="clearRecentFiles">
+          清除最近文件
+        </mdui-button>
       </div>
     </mdui-card>
 

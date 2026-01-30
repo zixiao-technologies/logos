@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useEditorStore } from '@/stores/editor'
 import { useGitStore } from '@/stores/git'
@@ -7,9 +7,14 @@ import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
 import { useBottomPanelStore } from '@/stores/bottomPanel'
 import { useIntelligenceStore } from '@/stores/intelligence'
+import { useFileExplorerStore } from '@/stores/fileExplorer'
+import { useNotificationStore } from '@/stores/notification'
 import { FileExplorer } from '@/components/FileExplorer'
 import { GitPanel } from '@/components/Git'
 import { BottomPanel } from '@/components/BottomPanel'
+import CommandPalette from '@/components/CommandPalette.vue'
+import type { Command } from '@/components/CommandPalette.vue'
+import SearchPanel from '@/components/Search/SearchPanel.vue'
 import TodoPanel from '@/components/Analysis/TodoPanel.vue'
 import CommitAnalysisPanel from '@/components/Analysis/CommitAnalysisPanel.vue'
 import { FileHistoryPanel } from '@/components/GitLens/FileHistory'
@@ -24,6 +29,9 @@ import { IntelligenceModeIndicator } from '@/components/StatusBar'
 import { GitOperationIndicator } from '@/components/StatusBar'
 import type { IndexingProgress, LanguageServerStatus } from '@/types/intelligence'
 import { useExtensionUiStore } from '@/stores/extensionUi'
+import { useProblemsStore } from '@/stores/problems'
+import { createAppCommands } from '@/config/commands'
+import * as monaco from 'monaco-editor'
 
 // 导入 MDUI 图标
 import '@mdui/icons/folder.js'
@@ -40,6 +48,7 @@ import '@mdui/icons/light-mode.js'
 import '@mdui/icons/hourglass-empty.js'
 import '@mdui/icons/check-circle.js'
 import '@mdui/icons/error.js'
+import '@mdui/icons/warning.js'
 import '@mdui/icons/checklist.js'
 import '@mdui/icons/analytics.js'
 import '@mdui/icons/bug-report.js'
@@ -50,12 +59,29 @@ import '@mdui/icons/extension.js'
 const router = useRouter()
 const route = useRoute()
 const editorStore = useEditorStore()
+const fileExplorerStore = useFileExplorerStore()
 const gitStore = useGitStore()
 const themeStore = useThemeStore()
 const settingsStore = useSettingsStore()
 const bottomPanelStore = useBottomPanelStore()
 const intelligenceStore = useIntelligenceStore()
 const extensionUiStore = useExtensionUiStore()
+const problemsStore = useProblemsStore()
+const notificationStore = useNotificationStore()
+
+const commandPaletteRef = ref<InstanceType<typeof CommandPalette> | null>(null)
+const commandCenterRef = ref<HTMLElement | null>(null)
+const showCommandCenterMenu = ref(false)
+const commandCenterMenuStyle = ref<{ top: string; left: string }>({ top: '0', left: '0' })
+const COMMAND_HISTORY_KEY = 'logos:recentCommands'
+const recentCommandIds = ref<string[]>([])
+
+const recentCommands = computed<Command[]>(() => {
+  const available = commands.value
+  return recentCommandIds.value
+    .map(id => available.find(command => command.id === id))
+    .filter((command): command is Command => command != null)
+})
 
 // 索引进度状态
 const indexingProgress = ref<IndexingProgress | null>(null)
@@ -65,44 +91,113 @@ let unsubscribeProgress: (() => void) | null = null
 const lspServers = ref<LanguageServerStatus[]>([])
 let unsubscribeLSPStatus: (() => void) | null = null
 
+let problemsSubscription: monaco.IDisposable | null = null
+let problemsRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let hdrCleanup: (() => void) | null = null
+
 // 反馈对话框引用
 const feedbackDialogRef = ref<InstanceType<typeof FeedbackReportDialog> | null>(null)
 
-// 处理反馈快捷键 (Cmd/Ctrl + Shift + F)
+// 处理反馈快捷键 (Ctrl + Alt + Shift + F)
 const handleFeedbackShortcut = (event: KeyboardEvent) => {
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-  const modifierKey = isMac ? event.metaKey : event.ctrlKey
-
-  if (modifierKey && event.shiftKey && event.key.toLowerCase() === 'f') {
+  if (event.ctrlKey && event.altKey && event.shiftKey && event.key.toLowerCase() === 'f') {
     event.preventDefault()
     feedbackDialogRef.value?.open()
   }
 }
 
-// 处理智能模式切换快捷键
-// Ctrl/Cmd + Shift + I: 切换模式
-// Ctrl/Cmd + Shift + B: 切换到 Basic Mode
-// Ctrl/Cmd + Shift + M: 切换到 Smart Mode (避免与 Ctrl+Shift+S 保存冲突)
+// 处理智能模式快捷键
+// Ctrl + Alt + I/M: Smart Mode
 const handleIntelligenceModeShortcut = async (event: KeyboardEvent) => {
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
-  const modifierKey = isMac ? event.metaKey : event.ctrlKey
-
-  if (!modifierKey || !event.shiftKey) return
+  if (!event.ctrlKey || !event.altKey || event.shiftKey) return
 
   const key = event.key.toLowerCase()
 
-  if (key === 'i') {
-    // 切换模式
-    event.preventDefault()
-    await intelligenceStore.toggleMode()
-  } else if (key === 'b') {
-    // 切换到 Basic Mode
-    event.preventDefault()
-    await intelligenceStore.setMode('basic')
-  } else if (key === 'm') {
-    // 切换到 Smart Mode
+  if (key === 'i' || key === 'm') {
     event.preventDefault()
     await intelligenceStore.setMode('smart')
+  }
+}
+
+// VS Code 风格的全局快捷键
+// Cmd/Ctrl + B: 切换侧边栏
+// Cmd/Ctrl + J: 切换底部面板
+// Ctrl + `: 切换终端
+// Cmd/Ctrl + Shift + E/F/G/D/X: 资源管理器/搜索/源码管理/调试/扩展
+// Cmd/Ctrl + Shift + M/U: 问题/输出 面板
+const handleWorkbenchShortcuts = (event: KeyboardEvent) => {
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0
+  const primaryKey = isMac ? event.metaKey : event.ctrlKey
+  const key = event.key.toLowerCase()
+  const isBackquote = event.code === 'Backquote' || event.key === '`'
+
+  if (event.ctrlKey && isBackquote) {
+    event.preventDefault()
+    toggleTerminalPanel()
+    return
+  }
+
+  if (!primaryKey) return
+
+  if (!event.shiftKey) {
+    if (key === 'b') {
+      event.preventDefault()
+      sidebarOpen.value = !sidebarOpen.value
+      return
+    }
+    if (key === 'j') {
+      event.preventDefault()
+      bottomPanelStore.togglePanel()
+      return
+    }
+    if (key === 'p') {
+      event.preventDefault()
+      openQuickOpen()
+      return
+    }
+    return
+  }
+
+  switch (key) {
+    case 'p':
+      event.preventDefault()
+      openCommandPalette()
+      break
+    case 'e':
+      event.preventDefault()
+      activeSidebarPanel.value = 'explorer'
+      sidebarOpen.value = true
+      break
+    case 'f':
+      event.preventDefault()
+      activeSidebarPanel.value = 'search'
+      sidebarOpen.value = true
+      break
+    case 'g':
+      event.preventDefault()
+      activeSidebarPanel.value = 'git'
+      sidebarOpen.value = true
+      break
+    case 'd':
+      event.preventDefault()
+      activeSidebarPanel.value = 'debug'
+      sidebarOpen.value = true
+      break
+    case 'x':
+      event.preventDefault()
+      activeSidebarPanel.value = 'extensions'
+      sidebarOpen.value = true
+      break
+    case 'm':
+      event.preventDefault()
+      bottomPanelStore.setActiveTab('problems')
+      break
+    case 'u':
+      event.preventDefault()
+      bottomPanelStore.setActiveTab('output')
+      break
+    default:
+      break
   }
 }
 
@@ -127,19 +222,142 @@ const toggleTerminalPanel = () => {
   }
 }
 
+const toggleSidebar = () => {
+  sidebarOpen.value = !sidebarOpen.value
+}
+
+const openCommandPalette = () => {
+  commandPaletteRef.value?.open('commands')
+}
+
+const openQuickOpen = () => {
+  commandPaletteRef.value?.open('quickOpen')
+}
+
+const scheduleProblemsRefresh = () => {
+  if (problemsRefreshTimer) {
+    clearTimeout(problemsRefreshTimer)
+  }
+  problemsRefreshTimer = setTimeout(() => {
+    problemsStore.refreshFromMonaco()
+  }, 60)
+}
+
+const globalSearchQuery = ref('')
+
+const recordCommand = (command: Command) => {
+  recentCommandIds.value = recentCommandIds.value.filter(id => id !== command.id)
+  recentCommandIds.value.unshift(command.id)
+  recentCommandIds.value = recentCommandIds.value.slice(0, 8)
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(recentCommandIds.value))
+  }
+}
+
+const focusSearchPanel = () => {
+  activeSidebarPanel.value = 'search'
+  sidebarOpen.value = true
+}
+
+const commitGlobalSearch = () => {
+  const query = globalSearchQuery.value.trim()
+  if (!query) {
+    focusSearchPanel()
+    return
+  }
+  focusSearchPanel()
+  window.dispatchEvent(new CustomEvent('search-panel:set-query', { detail: { query } }))
+}
+
+const setupHdrSupport = () => {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  const html = document.documentElement
+  const dynamicRangeQuery = window.matchMedia('(dynamic-range: high)')
+  const videoDynamicRangeQuery = window.matchMedia('(video-dynamic-range: high)')
+  const p3Query = window.matchMedia('(color-gamut: p3)')
+
+  const updateHdr = () => {
+    const dynamic =
+      (dynamicRangeQuery?.matches ?? false) || (videoDynamicRangeQuery?.matches ?? false)
+    const p3 = p3Query?.matches ?? false
+    const enabled = dynamic && p3
+    html.classList.toggle('hdr-enabled', enabled)
+  }
+
+  updateHdr()
+
+  const handlers: Array<[(event: MediaQueryListEvent) => void, MediaQueryList]> = []
+  const listen = (query: MediaQueryList | null, handler: () => void) => {
+    if (!query?.addEventListener) return
+    const wrapped = () => handler()
+    query.addEventListener('change', wrapped)
+    handlers.push([wrapped, query])
+  }
+
+  listen(dynamicRangeQuery, updateHdr)
+  listen(videoDynamicRangeQuery, updateHdr)
+  listen(p3Query, updateHdr)
+
+  hdrCleanup = () => {
+    handlers.forEach(([handler, query]) => {
+      query.removeEventListener('change', handler)
+    })
+  }
+}
+
+const toggleCommandCenterMenu = () => {
+  if (!showCommandCenterMenu.value) {
+    if (commandCenterRef.value) {
+      const rect = commandCenterRef.value.getBoundingClientRect()
+      commandCenterMenuStyle.value = {
+        top: `${rect.bottom + 6}px`,
+        left: `${rect.left}px`
+      }
+    }
+  }
+  showCommandCenterMenu.value = !showCommandCenterMenu.value
+}
+
+const closeCommandCenterMenu = () => {
+  showCommandCenterMenu.value = false
+}
+
+const handleCommandCenterOutsideClick = (event: MouseEvent) => {
+  if (!showCommandCenterMenu.value) return
+  if (commandCenterRef.value && commandCenterRef.value.contains(event.target as Node)) return
+  closeCommandCenterMenu()
+}
+
+const openRecentCommand = async (command: Command) => {
+  await command.action()
+  closeCommandCenterMenu()
+}
+
+const openRecentFile = async (path: string) => {
+  await editorStore.openFile(path)
+  closeCommandCenterMenu()
+}
+
 // 侧边栏面板项
-const basePanelItems = [
-  { id: 'explorer' as const, icon: 'folder', label: '资源管理器' },
-  { id: 'git' as const, icon: 'source', label: '源代码管理' },
-  { id: 'search' as const, icon: 'search', label: '搜索' },
-  { id: 'debug' as const, icon: 'bug-report', label: '运行和调试' },
-  { id: 'todos' as const, icon: 'checklist', label: 'TODO' },
-  { id: 'commitAnalysis' as const, icon: 'analytics', label: '提交分析' },
-  { id: 'fileHistory' as const, icon: 'history', label: '文件历史' },
-  { id: 'extensions' as const, icon: 'extension', label: '扩展' }
+type SidebarPanelItem = {
+  id: string
+  icon: string
+  label: string
+  iconUrl?: string
+}
+
+const basePanelItems: SidebarPanelItem[] = [
+  { id: 'explorer', icon: 'folder', label: '资源管理器' },
+  { id: 'git', icon: 'source', label: '源代码管理' },
+  { id: 'search', icon: 'search', label: '搜索' },
+  { id: 'debug', icon: 'bug-report', label: '运行和调试' },
+  { id: 'todos', icon: 'checklist', label: 'TODO' },
+  { id: 'commitAnalysis', icon: 'analytics', label: '提交分析' },
+  { id: 'fileHistory', icon: 'history', label: '文件历史' },
+  { id: 'extensions', icon: 'extension', label: '扩展' }
 ]
 
-const panelItems = computed(() => {
+const panelItems = computed<SidebarPanelItem[]>(() => {
   const extensionPanels = extensionUiStore.containers.map(container => ({
     id: `ext:${container.id}`,
     icon: 'extension-custom',
@@ -151,6 +369,30 @@ const panelItems = computed(() => {
     ...extensionPanels,
     basePanelItems[basePanelItems.length - 1]
   ]
+})
+
+const commands = computed<Command[]>(() => {
+  const baseCommands = createAppCommands({
+    router,
+    editorStore,
+    fileExplorerStore,
+    themeStore,
+    notificationStore,
+    toggleSidebar,
+    toggleTerminalPanel,
+    openCommandPalette,
+    openQuickOpen
+  })
+  return baseCommands.map(command => {
+    const action = command.action
+    return {
+      ...command,
+      action: async () => {
+        recordCommand(command)
+        await action()
+      }
+    }
+  })
 })
 
 const activeExtensionContainerId = computed(() => {
@@ -169,6 +411,14 @@ const statusBarInfo = computed(() => {
     line: activeTab?.cursorPosition.line || 1,
     column: activeTab?.cursorPosition.column || 1
   }
+})
+
+const lspSummary = computed(() => {
+  const ready = lspServers.value.filter(s => s.status === 'ready').length
+  const starting = lspServers.value.filter(s => s.status === 'starting').length
+  const error = lspServers.value.filter(s => s.status === 'error').length
+  if (ready + starting + error === 0) return null
+  return { ready, starting, error }
 })
 
 const navigateTo = (path: string, panel?: 'explorer' | 'git' | 'search' | 'todos' | 'commitAnalysis') => {
@@ -193,6 +443,31 @@ onMounted(async () => {
   window.addEventListener('keydown', handleFeedbackShortcut)
   // 注册智能模式切换快捷键监听器
   window.addEventListener('keydown', handleIntelligenceModeShortcut)
+  // 注册 VS Code 风格快捷键监听器
+  window.addEventListener('keydown', handleWorkbenchShortcuts)
+  document.addEventListener('click', handleCommandCenterOutsideClick)
+  // 监听问题变化
+  problemsStore.refreshFromMonaco()
+  problemsSubscription = monaco.editor.onDidChangeMarkers(() => {
+    scheduleProblemsRefresh()
+  })
+
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const saved = window.localStorage.getItem(COMMAND_HISTORY_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved) as string[]
+        if (Array.isArray(parsed)) {
+          recentCommandIds.value = parsed.filter(Boolean)
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to load recent commands:', error)
+    }
+  }
+
+  await editorStore.pruneRecentFiles()
+  setupHdrSupport()
 
   // 从设置初始化智能模式
   await intelligenceStore.initFromSettings(settingsStore.lspMode)
@@ -245,11 +520,36 @@ onMounted(async () => {
   }
 })
 
+watch(commands, (nextCommands) => {
+  if (recentCommandIds.value.length === 0) return
+  const available = new Set(nextCommands.map(command => command.id))
+  recentCommandIds.value = recentCommandIds.value.filter(id => available.has(id))
+  if (typeof window !== 'undefined' && window.localStorage) {
+    window.localStorage.setItem(COMMAND_HISTORY_KEY, JSON.stringify(recentCommandIds.value))
+  }
+})
+
 onUnmounted(() => {
   // 移除反馈快捷键监听器
   window.removeEventListener('keydown', handleFeedbackShortcut)
   // 移除智能模式切换快捷键监听器
   window.removeEventListener('keydown', handleIntelligenceModeShortcut)
+  // 移除 VS Code 风格快捷键监听器
+  window.removeEventListener('keydown', handleWorkbenchShortcuts)
+  document.removeEventListener('click', handleCommandCenterOutsideClick)
+
+  if (problemsSubscription) {
+    problemsSubscription.dispose()
+    problemsSubscription = null
+  }
+  if (problemsRefreshTimer) {
+    clearTimeout(problemsRefreshTimer)
+    problemsRefreshTimer = null
+  }
+  if (hdrCleanup) {
+    hdrCleanup()
+    hdrCleanup = null
+  }
 
   if (unsubscribeProgress) {
     unsubscribeProgress()
@@ -320,20 +620,8 @@ onUnmounted(() => {
       <!-- Git 面板 -->
       <GitPanel v-else-if="activeSidebarPanel === 'git'" />
 
-      <!-- 搜索面板 (待实现) -->
-      <div v-else-if="activeSidebarPanel === 'search'" class="panel-placeholder">
-        <div class="panel-header">
-          <span class="title">搜索</span>
-        </div>
-        <div class="panel-content">
-          <mdui-text-field
-            placeholder="搜索文件..."
-            variant="outlined"
-          >
-            <mdui-icon-search slot="icon"></mdui-icon-search>
-          </mdui-text-field>
-        </div>
-      </div>
+      <!-- 搜索面板 -->
+      <SearchPanel v-else-if="activeSidebarPanel === 'search'" />
 
       <!-- 调试面板 -->
       <DebugSidebarPanel v-else-if="activeSidebarPanel === 'debug'" />
@@ -363,6 +651,90 @@ onUnmounted(() => {
 
     <!-- 主内容区 -->
     <div class="main-content">
+      <!-- 顶部命令/搜索栏 -->
+      <div class="top-command-bar">
+        <button
+          ref="commandCenterRef"
+          class="command-center"
+          @click="toggleCommandCenterMenu"
+          title="命令中心"
+        >
+          <span class="command-label">执行命令</span>
+          <span class="command-shortcut">Cmd+Shift+P</span>
+        </button>
+        <div class="top-search">
+          <input
+            v-model="globalSearchQuery"
+            type="text"
+            placeholder="搜索 (Cmd+Shift+F)"
+            @focus="focusSearchPanel"
+            @keydown.enter="commitGlobalSearch"
+          />
+        </div>
+      </div>
+
+      <Teleport to="body">
+        <div
+          v-if="showCommandCenterMenu"
+          class="command-center-menu"
+          :style="commandCenterMenuStyle"
+          @click.stop
+        >
+          <div class="menu-section">
+            <div class="menu-title">快速入口</div>
+            <button class="menu-item" @click="closeCommandCenterMenu(); openCommandPalette()">
+              <span>命令面板</span>
+              <span class="menu-shortcut">Cmd+Shift+P</span>
+            </button>
+            <button class="menu-item" @click="closeCommandCenterMenu(); openQuickOpen()">
+              <span>快速打开</span>
+              <span class="menu-shortcut">Cmd+P</span>
+            </button>
+            <button class="menu-item" @click="closeCommandCenterMenu(); focusSearchPanel()">
+              <span>搜索</span>
+              <span class="menu-shortcut">Cmd+Shift+F</span>
+            </button>
+          </div>
+
+          <div class="menu-section">
+            <div class="menu-title">最近命令</div>
+            <div v-if="recentCommands.length === 0" class="menu-empty">暂无最近命令</div>
+            <button
+              v-for="command in recentCommands"
+              :key="command.id"
+              class="menu-item"
+              @click="openRecentCommand(command)"
+            >
+              <span>{{ command.title }}</span>
+              <span v-if="command.shortcut" class="menu-shortcut">{{ command.shortcut }}</span>
+            </button>
+          </div>
+
+          <div class="menu-section">
+            <div class="menu-title">最近文件</div>
+            <div v-if="editorStore.recentFiles.length === 0" class="menu-empty">暂无最近文件</div>
+            <button
+              v-else
+              class="menu-item"
+              @click="editorStore.clearRecentFiles(); notificationStore.success('已清除最近文件'); closeCommandCenterMenu()"
+            >
+              <span>清除最近文件</span>
+            </button>
+            <button
+              v-for="path in editorStore.recentFiles.slice(0, 8)"
+              :key="path"
+              class="menu-item menu-item-file"
+              @click="openRecentFile(path)"
+            >
+              <div class="menu-text">
+                <span class="menu-file">{{ path.split(/[\\\\/]/).pop() || path }}</span>
+                <span class="menu-sub">{{ path }}</span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </Teleport>
+
       <!-- 顶部标签栏 (编辑器视图时显示) -->
       <div v-if="currentRoute === '/'" class="tab-bar">
         <div class="tabs-container">
@@ -416,6 +788,18 @@ onUnmounted(() => {
           <mdui-icon-sync></mdui-icon-sync>
           {{ editorStore.dirtyTabs.length }} 未保存
         </span>
+        <!-- 问题统计 -->
+        <span
+          class="status-item clickable"
+          v-if="problemsStore.totalCount > 0"
+          @click="bottomPanelStore.setActiveTab('problems')"
+          title="查看问题"
+        >
+          <mdui-icon-error></mdui-icon-error>
+          {{ problemsStore.errorCount }}
+          <mdui-icon-warning class="status-icon"></mdui-icon-warning>
+          {{ problemsStore.warningCount }}
+        </span>
         <!-- 索引进度 -->
         <span
           class="status-item indexing-status"
@@ -426,33 +810,15 @@ onUnmounted(() => {
           <span class="indexing-text">{{ indexingProgress.message }}</span>
           <span class="indexing-progress">{{ indexingProgress.percentage }}%</span>
         </span>
-        <!-- LSP 服务器状态 -->
+        <!-- LSP 服务器状态 (汇总) -->
         <span
-          v-for="server in lspServers.filter(s => s.status === 'ready')"
-          :key="server.language"
-          class="status-item lsp-status ready"
-          :title="`${server.language} LSP ready`"
+          v-if="lspSummary"
+          class="status-item lsp-status"
+          :title="`LSP: ${lspSummary.ready} ready / ${lspSummary.starting} starting / ${lspSummary.error} error`"
         >
-          <mdui-icon-check-circle></mdui-icon-check-circle>
-          {{ server.language }}
-        </span>
-        <span
-          v-for="server in lspServers.filter(s => s.status === 'starting')"
-          :key="server.language"
-          class="status-item lsp-status starting"
-          :title="`${server.language} LSP starting...`"
-        >
-          <mdui-icon-hourglass-empty class="spinning"></mdui-icon-hourglass-empty>
-          {{ server.language }}
-        </span>
-        <span
-          v-for="server in lspServers.filter(s => s.status === 'error')"
-          :key="server.language"
-          class="status-item lsp-status error"
-          :title="server.message || `${server.language} LSP error`"
-        >
-          <mdui-icon-error></mdui-icon-error>
-          {{ server.language }}
+          <mdui-icon-check-circle v-if="lspSummary.error === 0"></mdui-icon-check-circle>
+          <mdui-icon-error v-else></mdui-icon-error>
+          LSP {{ lspSummary.ready }}/{{ lspSummary.starting }}/{{ lspSummary.error }}
         </span>
       </div>
       <div class="status-right">
@@ -479,6 +845,9 @@ onUnmounted(() => {
 
     <!-- 反馈上报对话框 (Cmd/Ctrl + Shift + F 触发) -->
     <FeedbackReportDialog ref="feedbackDialogRef" />
+
+    <!-- Command Palette / Quick Open -->
+    <CommandPalette ref="commandPaletteRef" :commands="commands" />
 
     <!-- 通知容器 -->
     <NotificationContainer />
@@ -605,6 +974,157 @@ onUnmounted(() => {
   padding-top: 38px; /* macOS 窗口控制按钮空间 */
 }
 
+/* 顶部命令/搜索栏 */
+.top-command-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--mdui-color-surface-container);
+  border-bottom: 1px solid var(--mdui-color-outline-variant);
+}
+
+.command-center {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border: 1px solid var(--mdui-color-outline-variant);
+  border-radius: 8px;
+  background: var(--mdui-color-surface);
+  color: var(--mdui-color-on-surface-variant);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.command-center:hover {
+  border-color: var(--mdui-color-primary);
+  color: var(--mdui-color-on-surface);
+}
+
+.command-label {
+  font-weight: 500;
+}
+
+.command-shortcut {
+  font-size: 11px;
+  color: var(--mdui-color-on-surface-variant);
+}
+
+.top-search {
+  display: flex;
+  align-items: center;
+  background: var(--mdui-color-surface);
+  border: 1px solid var(--mdui-color-outline-variant);
+  border-radius: 8px;
+  padding: 6px 12px;
+}
+
+.top-search input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--mdui-color-on-surface);
+  font-size: 12px;
+}
+
+.top-search input:focus {
+  outline: none;
+}
+
+.command-center-menu {
+  position: fixed;
+  z-index: 2100;
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--mdui-color-surface-container);
+  border: 1px solid var(--mdui-color-outline-variant);
+  border-radius: 10px;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.25);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.command-center-menu .menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.command-center-menu .menu-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--mdui-color-on-surface-variant);
+  padding: 4px 6px;
+}
+
+.command-center-menu .menu-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--mdui-color-on-surface);
+  cursor: pointer;
+  text-align: left;
+}
+
+.command-center-menu .menu-item-file {
+  justify-content: flex-start;
+}
+
+.command-center-menu .menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-center-menu .menu-item:hover {
+  background: var(--mdui-color-surface-container-high);
+}
+
+.command-center-menu .menu-shortcut {
+  font-size: 11px;
+  color: var(--mdui-color-on-surface-variant);
+  white-space: nowrap;
+}
+
+.command-center-menu .menu-empty {
+  font-size: 12px;
+  color: var(--mdui-color-on-surface-variant);
+  padding: 6px 8px;
+}
+
+.command-center-menu .menu-file {
+  font-weight: 500;
+}
+
+.command-center-menu .menu-sub {
+  font-size: 11px;
+  color: var(--mdui-color-on-surface-variant);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+}
+
+:global(html.hdr-enabled) {
+  --logos-hdr-primary: color(display-p3 0.1 0.6 1);
+  --logos-hdr-error: color(display-p3 1 0.2 0.2);
+  --logos-hdr-warning: color(display-p3 1 0.85 0.2);
+  --logos-hdr-info: color(display-p3 0.2 0.8 1);
+
+  --mdui-color-primary: var(--logos-hdr-primary);
+  --mdui-color-error: var(--logos-hdr-error);
+  --mdui-color-warning: var(--logos-hdr-warning);
+  --mdui-color-tertiary: var(--logos-hdr-info);
+}
 /* 编辑器和底部面板的分屏容器 */
 .editor-panel-container {
   display: flex;
@@ -743,6 +1263,10 @@ onUnmounted(() => {
 .status-item mdui-icon-sync,
 .status-item mdui-icon-hourglass-empty {
   font-size: 14px;
+}
+
+.status-icon {
+  margin-left: 6px;
 }
 
 /* 索引进度样式 */

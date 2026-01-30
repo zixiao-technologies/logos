@@ -7,11 +7,32 @@ import type { EditorTab, EditorState, EditorConfig, CursorPosition } from '@/typ
 import { DEFAULT_EDITOR_CONFIG } from '@/types'
 import { detectLanguage, generateId, getFilename } from '@/utils'
 
+const RECENT_FILES_KEY = 'logos:recentFiles'
+
+const loadRecentFiles = (): string[] => {
+  if (typeof window === 'undefined' || !window.localStorage) return []
+  try {
+    const saved = window.localStorage.getItem(RECENT_FILES_KEY)
+    if (!saved) return []
+    const parsed = JSON.parse(saved)
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : []
+  } catch (error) {
+    console.warn('Failed to load recent files:', error)
+    return []
+  }
+}
+
+const persistRecentFiles = (files: string[]) => {
+  if (typeof window === 'undefined' || !window.localStorage) return
+  window.localStorage.setItem(RECENT_FILES_KEY, JSON.stringify(files))
+}
+
 export const useEditorStore = defineStore('editor', {
   state: (): EditorState => ({
     tabs: [],
     activeTabId: null,
-    recentFiles: [],
+    recentFiles: loadRecentFiles(),
+    pendingNavigation: null,
     config: { ...DEFAULT_EDITOR_CONFIG }
   }),
 
@@ -237,6 +258,38 @@ export const useEditorStore = defineStore('editor', {
       if (this.recentFiles.length > 20) {
         this.recentFiles = this.recentFiles.slice(0, 20)
       }
+
+      persistRecentFiles(this.recentFiles)
+    },
+
+    /**
+     * 清空最近文件
+     */
+    clearRecentFiles() {
+      this.recentFiles = []
+      persistRecentFiles(this.recentFiles)
+    },
+
+    /**
+     * 启动时清理不存在的路径
+     */
+    async pruneRecentFiles() {
+      if (!window.electronAPI?.fileSystem?.exists) return
+      const checks = await Promise.all(
+        this.recentFiles.map(async (path) => {
+          try {
+            const exists = await window.electronAPI.fileSystem.exists(path)
+            return exists ? path : null
+          } catch {
+            return null
+          }
+        })
+      )
+      const next = checks.filter((path): path is string => Boolean(path))
+      if (next.length !== this.recentFiles.length) {
+        this.recentFiles = next
+        persistRecentFiles(this.recentFiles)
+      }
     },
 
     /**
@@ -298,6 +351,25 @@ export const useEditorStore = defineStore('editor', {
       const currentIndex = this.tabs.findIndex(t => t.id === this.activeTabId)
       const prevIndex = (currentIndex - 1 + this.tabs.length) % this.tabs.length
       this.activeTabId = this.tabs[prevIndex].id
+    },
+
+    /**
+     * 跳转到指定位置
+     */
+    async navigateToLocation(path: string, line: number, column = 1) {
+      try {
+        const tab = await this.openFile(path)
+        this.updateCursorPosition(tab.id, { line, column })
+        this.pendingNavigation = { path, line, column }
+        return true
+      } catch (error) {
+        console.error('导航到位置失败:', error)
+        return false
+      }
+    },
+
+    clearPendingNavigation() {
+      this.pendingNavigation = null
     }
   }
 })

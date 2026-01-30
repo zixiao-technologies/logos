@@ -9,7 +9,7 @@ import { useBottomPanelStore, type OutputLogEntry } from '@/stores/bottomPanel'
 
 // 导入图标
 import '@mdui/icons/delete.js'
-import '@mdui/icons/filter-list.js'
+import '@mdui/icons/search.js'
 import '@mdui/icons/info.js'
 import '@mdui/icons/warning.js'
 import '@mdui/icons/error.js'
@@ -24,6 +24,7 @@ const logContainer = ref<HTMLElement | null>(null)
 const filterLevel = ref<OutputLogEntry['level'] | 'all'>('all')
 const filterSource = ref<string>('')
 const autoScroll = ref(true)
+const filterText = ref('')
 
 // 获取所有来源
 const sources = computed(() => {
@@ -41,6 +42,11 @@ const filteredLogs = computed(() => {
 
   if (filterSource.value) {
     logs = logs.filter(log => log.source === filterSource.value)
+  }
+
+  if (filterText.value.trim()) {
+    const query = filterText.value.trim().toLowerCase()
+    logs = logs.filter(log => log.message.toLowerCase().includes(query))
   }
 
   return logs
@@ -95,6 +101,10 @@ onMounted(() => {
     <!-- 工具栏 -->
     <div class="toolbar">
       <div class="toolbar-left">
+        <div class="text-filter">
+          <mdui-icon-search></mdui-icon-search>
+          <input v-model="filterText" type="text" placeholder="筛选日志内容" />
+        </div>
         <!-- 来源筛选 -->
         <select v-model="filterSource" class="source-select">
           <option value="">所有来源</option>
@@ -204,6 +214,29 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.text-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--mdui-color-outline-variant);
+  border-radius: 4px;
+  background: var(--mdui-color-surface);
+  font-size: 12px;
+}
+
+.text-filter input {
+  border: none;
+  background: transparent;
+  color: var(--mdui-color-on-surface);
+  font-size: 12px;
+  width: 140px;
+}
+
+.text-filter input:focus {
+  outline: none;
 }
 
 .toolbar-right {

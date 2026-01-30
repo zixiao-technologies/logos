@@ -6,8 +6,10 @@
 
 import { ref, computed, onUnmounted } from 'vue'
 import { useBottomPanelStore, type BottomPanelTab } from '@/stores/bottomPanel'
+import { useProblemsStore } from '@/stores/problems'
 import TerminalPanel from './TerminalPanel.vue'
 import OutputLog from './OutputLog.vue'
+import ProblemsPanel from './ProblemsPanel.vue'
 import { DebugConsole } from '@/components/Debug'
 
 // 导入图标
@@ -20,6 +22,7 @@ import '@mdui/icons/expand-more.js'
 import '@mdui/icons/bug-report.js'
 
 const bottomPanelStore = useBottomPanelStore()
+const problemsStore = useProblemsStore()
 
 // 定义标签页配置
 const tabs: { id: BottomPanelTab; label: string; icon: string }[] = [
@@ -110,6 +113,12 @@ onUnmounted(() => {
           <mdui-icon-bug-report v-else-if="tab.icon === 'bug-report'"></mdui-icon-bug-report>
           <span class="tab-label">{{ tab.label }}</span>
           <span
+            v-if="tab.id === 'problems' && problemsStore.totalCount > 0"
+            class="badge warn"
+          >
+            {{ problemsStore.errorCount + problemsStore.warningCount }}
+          </span>
+          <span
             v-if="tab.id === 'output' && bottomPanelStore.errorCount > 0"
             class="badge error"
           >
@@ -133,9 +142,7 @@ onUnmounted(() => {
     <div class="panel-content">
       <TerminalPanel v-show="bottomPanelStore.activeTab === 'terminal'" />
       <OutputLog v-show="bottomPanelStore.activeTab === 'output'" />
-      <div v-show="bottomPanelStore.activeTab === 'problems'" class="problems-panel">
-        <div class="empty-message">暂无问题</div>
-      </div>
+      <ProblemsPanel v-show="bottomPanelStore.activeTab === 'problems'" />
       <DebugConsole v-show="bottomPanelStore.activeTab === 'debug-console'" />
     </div>
   </div>
@@ -239,20 +246,14 @@ onUnmounted(() => {
   color: var(--mdui-color-on-error);
 }
 
+.badge.warn {
+  background: var(--mdui-color-warning, #ffb300);
+  color: #1f1f1f;
+}
+
 .panel-content {
   flex: 1;
   overflow: hidden;
 }
 
-.problems-panel {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-}
-
-.empty-message {
-  color: var(--mdui-color-on-surface-variant);
-  font-size: 14px;
-}
 </style>

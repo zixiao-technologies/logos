@@ -104,8 +104,7 @@ const gotoSuggestion = async (suggestion: ReviewSuggestion) => {
   if (!rootPath) return
 
   const filePath = `${rootPath}/${suggestion.file}`
-  await editorStore.openFile(filePath)
-  // TODO: 跳转到具体行号
+  await editorStore.navigateToLocation(filePath, suggestion.line, 1)
 }
 
 // 分析指定提交

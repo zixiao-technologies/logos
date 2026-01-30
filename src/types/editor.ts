@@ -68,8 +68,17 @@ export interface EditorState {
   activeTabId: string | null
   /** 最近打开的文件列表 */
   recentFiles: string[]
+  /** 待跳转的位置 */
+  pendingNavigation: NavigationTarget | null
   /** 编辑器配置 */
   config: EditorConfig
+}
+
+/** 导航位置 */
+export interface NavigationTarget {
+  path: string
+  line: number
+  column: number
 }
 
 /** 默认编辑器配置 */
