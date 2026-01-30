@@ -43,6 +43,6 @@ describe('ExtensionsPanel', () => {
 
     const icon = wrapper.find('img.extension-icon')
     expect(icon.exists()).toBe(true)
-    expect(icon.attributes('src')).toBe('logos-extension://C:/Users/me/My%20Icon.png')
+    expect(icon.attributes('src')).toBe('logos-extension://local-fileC:/Users/me/My%20Icon.png')
   })
 })

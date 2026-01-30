@@ -45,7 +45,7 @@ describe('Intelligence Store - Project Settings', () => {
     it('应该从 .logos 加载项目设置并应用', async () => {
       const intelligenceStore = useIntelligenceStore()
       const settingsStore = useSettingsStore()
-      // 设置 LSP mode
+      // 设置 LSP mode (basic 会被规范化为 smart)
       settingsStore.setLSPMode('basic')
 
       const projectRoot = '/test/project'
@@ -62,9 +62,12 @@ describe('Intelligence Store - Project Settings', () => {
       expect(mockElectronAPI.intelligence.loadMergedSettings).toHaveBeenCalledWith(
         projectRoot,
         expect.objectContaining({
-          preferredMode: 'basic',
-          autoSelect: expect.any(Boolean),
-          smartModeThreshold: expect.any(Object)
+          preferredMode: 'smart',
+          autoSelect: true,
+          smartModeThreshold: expect.objectContaining({
+            maxFiles: 5000,
+            maxMemoryMB: 2048
+          })
         })
       )
       expect(intelligenceStore.mode).toBe('smart')
