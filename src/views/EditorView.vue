@@ -46,8 +46,9 @@ function notifyDocumentOpen(model: monaco.editor.ITextModel, content: string) {
   if (!window.electronAPI?.extensions?.notifyDocumentOpen) {
     return
   }
+  const uri = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.toString()
   void window.electronAPI.extensions.notifyDocumentOpen({
-    uri: model.uri.fsPath,
+    uri,
     languageId: model.getLanguageId(),
     content,
     version: model.getVersionId()
@@ -58,8 +59,9 @@ function notifyDocumentChange(model: monaco.editor.ITextModel, content: string) 
   if (!window.electronAPI?.extensions?.notifyDocumentChange) {
     return
   }
+  const uri = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.toString()
   void window.electronAPI.extensions.notifyDocumentChange({
-    uri: model.uri.fsPath,
+    uri,
     languageId: model.getLanguageId(),
     content,
     version: model.getVersionId()
@@ -70,7 +72,8 @@ function notifyDocumentClose(model: monaco.editor.ITextModel) {
   if (!window.electronAPI?.extensions?.notifyDocumentClose) {
     return
   }
-  void window.electronAPI.extensions.notifyDocumentClose({ uri: model.uri.fsPath })
+  const uri = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.toString()
+  void window.electronAPI.extensions.notifyDocumentClose({ uri })
 }
 
 function notifyActiveEditorChange(model: monaco.editor.ITextModel | null) {
@@ -81,9 +84,10 @@ function notifyActiveEditorChange(model: monaco.editor.ITextModel | null) {
     void window.electronAPI.extensions.notifyActiveEditorChange({ uri: null })
     return
   }
+  const uri = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.toString()
   const selection = editor?.getSelection()
   void window.electronAPI.extensions.notifyActiveEditorChange({
-    uri: model.uri.fsPath,
+    uri,
     selection: selection ? toExtensionRange(selection) : undefined
   })
 }
@@ -92,8 +96,9 @@ function notifySelectionChange(model: monaco.editor.ITextModel | null, selection
   if (!window.electronAPI?.extensions?.notifySelectionChange || !model) {
     return
   }
+  const uri = model.uri.scheme === 'file' ? model.uri.fsPath : model.uri.toString()
   void window.electronAPI.extensions.notifySelectionChange({
-    uri: model.uri.fsPath,
+    uri,
     selection: toExtensionRange(selection)
   })
 }
@@ -125,10 +130,11 @@ function getOrCreateModel(path: string, content: string, language: string): mona
     return models.get(path)!
   }
 
+  const modelUri = path.includes('://') ? monaco.Uri.parse(path) : monaco.Uri.file(path)
   const model = monaco.editor.createModel(
     content,
     language,
-    monaco.Uri.file(path)
+    modelUri
   )
 
   models.set(path, model)
@@ -136,7 +142,9 @@ function getOrCreateModel(path: string, content: string, language: string): mona
   notifyDocumentOpen(model, content)
 
   // 为新打开的文件调用 openFile (用于 Daemon 语言)
-  intelligenceManager.openFile(path, content)
+  if (!path.includes('://')) {
+    intelligenceManager.openFile(path, content)
+  }
 
   return model
 }
@@ -150,7 +158,9 @@ function disposeModel(path: string) {
     models.delete(path)
 
     // 通知语言服务关闭文件
-    intelligenceManager.closeFile(path)
+    if (!path.includes('://')) {
+      intelligenceManager.closeFile(path)
+    }
   }
 }
 

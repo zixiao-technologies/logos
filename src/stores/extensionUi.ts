@@ -5,7 +5,8 @@ import type {
   ExtensionViewContainer,
   ExtensionWebviewHtml,
   ExtensionWebviewMessage,
-  ExtensionWebviewResolveResult
+  ExtensionWebviewResolveResult,
+  ExtensionScmTitleAction
 } from '@/types'
 
 const webviewMessageListeners = new Map<string, Set<(message: unknown) => void>>()
@@ -28,6 +29,7 @@ export const useExtensionUiStore = defineStore('extensionUi', {
   state: () => ({
     containers: [] as ExtensionViewContainer[],
     views: [] as ExtensionView[],
+    scmTitleActions: [] as ExtensionScmTitleAction[],
     loading: false,
     error: null as string | null,
     viewHtml: {} as Record<string, string>,
@@ -42,6 +44,12 @@ export const useExtensionUiStore = defineStore('extensionUi', {
     },
     containerById: (state) => (containerId: string) => {
       return state.containers.find(container => container.id === containerId)
+    },
+    scmTitleActionsByExtension: (state) => (extensionId?: string) => {
+      if (!extensionId) {
+        return state.scmTitleActions
+      }
+      return state.scmTitleActions.filter(action => action.extensionId === extensionId)
     }
   },
 
@@ -104,6 +112,7 @@ export const useExtensionUiStore = defineStore('extensionUi', {
         })
         this.containers = result.containers || []
         this.views = result.views || []
+        this.scmTitleActions = result.scmTitleActions || []
 
         const validViewIds = new Set(this.views.map(view => view.id))
         for (const viewId of Object.keys(this.viewHtml)) {

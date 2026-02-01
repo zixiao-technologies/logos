@@ -94,8 +94,11 @@ export class ExtensionHost {
 
   async start(): Promise<void> {
     await this.loadExtensions()
-    await this.activateOnStartup()
     const root = process.env.LOGOS_WORKSPACE_ROOT
+    if (root) {
+      setWorkspaceRoot(root)
+    }
+    await this.activateOnStartup()
     if (root) {
       await this.activateByWorkspaceContains(root)
     }

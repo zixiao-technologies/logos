@@ -75,15 +75,29 @@ export class Uri {
    * Parse a URI string into a Uri object
    */
   static parse(value: string): Uri {
-    if (value.startsWith('file://')) {
-      const decoded = decodeURIComponent(value.replace(/^file:\/\//, ''))
-      return new Uri('file', '', decoded)
-    }
+    let scheme = 'file'
+    let rest = value
     if (value.includes('://')) {
-      const [scheme, rest] = value.split('://')
-      return new Uri(scheme, '', rest)
+      const index = value.indexOf('://')
+      scheme = value.slice(0, index)
+      rest = value.slice(index + 3)
     }
-    return new Uri('file', '', value)
+    let fragment = ''
+    let query = ''
+    const hashIndex = rest.indexOf('#')
+    if (hashIndex >= 0) {
+      fragment = rest.slice(hashIndex + 1)
+      rest = rest.slice(0, hashIndex)
+    }
+    const queryIndex = rest.indexOf('?')
+    if (queryIndex >= 0) {
+      query = rest.slice(queryIndex + 1)
+      rest = rest.slice(0, queryIndex)
+    }
+    if (scheme === 'file') {
+      rest = decodeURIComponent(rest)
+    }
+    return new Uri(scheme, '', rest, query, fragment)
   }
 
   /**
@@ -100,13 +114,26 @@ export class Uri {
     return new Uri(base.scheme, base.authority, joined)
   }
 
+  with(changes: { scheme?: string; authority?: string; path?: string; query?: string; fragment?: string }): Uri {
+    return new Uri(
+      changes.scheme ?? this.scheme,
+      changes.authority ?? this.authority,
+      changes.path ?? this.path,
+      changes.query ?? this.query,
+      changes.fragment ?? this.fragment
+    )
+  }
+
   get fsPath(): string {
     return this.path
   }
 
   toString(): string {
     // TODO (Phase 2): Implement proper URI serialization
-    return `${this.scheme}://${this.authority}${this.path}`
+    const base = `${this.scheme}://${this.authority}${this.path}`
+    const query = this.query ? `?${this.query}` : ''
+    const fragment = this.fragment ? `#${this.fragment}` : ''
+    return `${base}${query}${fragment}`
   }
 }
 
@@ -343,6 +370,7 @@ const documents = new Map<string, InternalDocument>()
 let activeTextEditorInternal: TextEditor | undefined
 
 const commandRegistry = new Map<string, { callback: (...args: any[]) => any; thisArg?: any }>()
+const commandContexts = new Map<string, unknown>()
 
 type ExtensionRegistryEntry = {
   id: string
@@ -402,7 +430,10 @@ const webviewsByHandle = new Map<string, WebviewImpl>()
 const webviewHandleByViewId = new Map<string, string>()
 const webviewResolveCache = new Map<string, { handle: string; html: string; options: WebviewOptions }>()
 const webviewResolveInFlight = new Map<string, Promise<{ handle: string; html: string; options: WebviewOptions } | null>>()
+const webviewPanelsByHandle = new Map<string, WebviewPanelImpl>()
 let webviewHandleCounter = 0
+let statusBarItemCounter = 0
+const textDocumentContentProviders = new Map<string, TextDocumentContentProvider>()
 
 const onDidOpenTextDocumentEmitter = new EventEmitter<TextDocument>()
 const onDidCloseTextDocumentEmitter = new EventEmitter<TextDocument>()
@@ -424,11 +455,107 @@ const onDidChangeExtensionsEmitter = new EventEmitter<void>()
 const onDidChangeTerminalShellIntegrationEmitter = new EventEmitter<void>()
 const onDidChangeTabGroupsEmitter = new EventEmitter<void>()
 
-function normalizeUriKey(input: Uri | string): string {
-  if (typeof input === 'string') {
-    return Uri.file(input).toString()
+type ConfigurationStoreScope = 'global' | 'workspace' | 'workspaceFolder'
+export type ConfigurationInspect<T> = {
+  key?: string
+  defaultValue?: T
+  globalValue?: T
+  workspaceValue?: T
+  workspaceFolderValue?: T
+  defaultLanguageValue?: T
+  globalLanguageValue?: T
+  workspaceLanguageValue?: T
+  workspaceFolderLanguageValue?: T
+}
+
+const configurationStore: Record<ConfigurationStoreScope, Map<string, any>> = {
+  global: new Map<string, any>(),
+  workspace: new Map<string, any>(),
+  workspaceFolder: new Map<string, any>()
+}
+
+function resolveConfigurationScope(target?: ConfigurationTarget | boolean | null): ConfigurationStoreScope {
+  if (target === ConfigurationTarget.Workspace) return 'workspace'
+  if (target === ConfigurationTarget.WorkspaceFolder) return 'workspaceFolder'
+  if (target === false) return 'workspace'
+  return 'global'
+}
+
+function buildConfigurationKey(section: string | undefined, key: string): string {
+  return section ? `${section}.${key}` : key
+}
+
+function getConfigurationValue<T>(fullKey: string): { value: T | undefined; scope: ConfigurationStoreScope | undefined } {
+  if (configurationStore.workspaceFolder.has(fullKey)) {
+    return { value: configurationStore.workspaceFolder.get(fullKey), scope: 'workspaceFolder' }
   }
-  return input.toString()
+  if (configurationStore.workspace.has(fullKey)) {
+    return { value: configurationStore.workspace.get(fullKey), scope: 'workspace' }
+  }
+  if (configurationStore.global.has(fullKey)) {
+    return { value: configurationStore.global.get(fullKey), scope: 'global' }
+  }
+  return { value: undefined, scope: undefined }
+}
+
+function createConfigurationChangeEvent(changedKey: string): ConfigurationChangeEvent {
+  return {
+    affectsConfiguration: (section: string, _scope?: ConfigurationScope) => {
+      if (!section) return true
+      return (
+        changedKey === section ||
+        changedKey.startsWith(`${section}.`) ||
+        section.startsWith(`${changedKey}.`)
+      )
+    }
+  }
+}
+
+function normalizeUriKey(input: Uri | string): string {
+  return toUri(input).toString()
+}
+
+function toUri(input: Uri | string): Uri {
+  if (input instanceof Uri) {
+    return input
+  }
+  if (input.includes('://')) {
+    return Uri.parse(input)
+  }
+  return Uri.file(input)
+}
+
+function serializeCommandArg(arg: unknown): unknown {
+  if (arg instanceof Uri) {
+    return arg.toString()
+  }
+  if (arg && typeof arg === 'object') {
+    const maybeUri = arg as { scheme?: string; authority?: string; path?: string; query?: string; fragment?: string }
+    if (typeof maybeUri.scheme === 'string' && typeof maybeUri.path === 'string') {
+      return new Uri(
+        maybeUri.scheme,
+        maybeUri.authority ?? '',
+        maybeUri.path,
+        maybeUri.query ?? '',
+        maybeUri.fragment ?? ''
+      ).toString()
+    }
+  }
+  return arg
+}
+
+function serializeCommand(command?: string | Command): { command: string; title?: string; arguments?: unknown[] } | undefined {
+  if (!command) {
+    return undefined
+  }
+  if (typeof command === 'string') {
+    return { command }
+  }
+  return {
+    command: command.command,
+    title: command.title,
+    arguments: command.arguments?.map(serializeCommandArg)
+  }
 }
 
 
@@ -667,6 +794,13 @@ async function showMessage(level: 'info' | 'warning' | 'error', message: string,
   return undefined
 }
 
+function normalizeMessageItems(items: Array<string | MessageOptions>): string[] {
+  if (items.length > 0 && items[0] && typeof items[0] === 'object') {
+    return items.slice(1).filter((item): item is string => typeof item === 'string')
+  }
+  return items.filter((item): item is string => typeof item === 'string')
+}
+
 function toWebviewUri(resource: Uri): Uri {
   const normalized = resource.path.replace(/\\/g, '/')
   return new Uri('logos-extension', '', `local-file${encodeURI(normalized)}`)
@@ -713,6 +847,84 @@ class WebviewImpl implements Webview {
   }
 }
 
+class WebviewPanelImpl implements WebviewPanel {
+  readonly viewType: string
+  readonly webview: WebviewImpl
+  readonly viewColumn?: ViewColumn
+  private _title: string
+  private _iconPath: Uri | { light: Uri; dark: Uri } | undefined
+  private _visible = true
+  private _active = true
+  private readonly disposeEmitter = new EventEmitter<void>()
+  private readonly viewStateEmitter = new EventEmitter<void>()
+  onDidDispose = this.disposeEmitter.event
+  onDidChangeViewState = this.viewStateEmitter.event
+  private disposed = false
+
+  constructor(viewType: string, title: string, webview: WebviewImpl, viewColumn?: ViewColumn) {
+    this.viewType = viewType
+    this._title = title
+    this.webview = webview
+    this.viewColumn = viewColumn
+    this.sync('create')
+  }
+
+  get title(): string {
+    return this._title
+  }
+
+  set title(value: string) {
+    this._title = value ?? ''
+    this.sync('update')
+  }
+
+  get iconPath(): Uri | { light: Uri; dark: Uri } | undefined {
+    return this._iconPath
+  }
+
+  set iconPath(value: Uri | { light: Uri; dark: Uri } | undefined) {
+    this._iconPath = value
+    this.sync('update')
+  }
+
+  get visible(): boolean {
+    return this._visible
+  }
+
+  get active(): boolean {
+    return this._active
+  }
+
+  reveal(): void {
+    if (this.disposed) return
+    this._visible = true
+    this._active = true
+    this.sync('reveal')
+    this.viewStateEmitter.fire(undefined as void)
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    this._visible = false
+    this._active = false
+    webviewPanelsByHandle.delete(this.webview.handle)
+    webviewsByHandle.delete(this.webview.handle)
+    this.disposeEmitter.fire(undefined as void)
+    this.sync('dispose')
+  }
+
+  private sync(action: 'create' | 'update' | 'reveal' | 'dispose'): void {
+    notifyMain('webviewPanel', {
+      action,
+      handle: this.webview.handle,
+      viewType: this.viewType,
+      title: this._title,
+      options: this.webview.options
+    })
+  }
+}
+
 function createWebview(handle: string, viewId: string): WebviewImpl {
   const webview = new WebviewImpl(handle, viewId)
   webviewsByHandle.set(handle, webview)
@@ -740,6 +952,82 @@ async function ensureDocumentForRequest(uri: string, languageHint?: string): Pro
     return __internalOpenDocument({ uri, languageId: languageHint ?? 'plaintext', content, version: 1 })
   } catch {
     return undefined
+  }
+}
+
+class StatusBarItemImpl implements StatusBarItem {
+  readonly id: string
+  readonly alignment?: StatusBarAlignment
+  readonly priority?: number
+  private _text = ''
+  private _tooltip: string | undefined
+  private _command: string | Command | undefined
+  private _visible = false
+  private disposed = false
+
+  constructor(id: string, alignment?: StatusBarAlignment, priority?: number) {
+    this.id = id
+    this.alignment = alignment
+    this.priority = priority
+  }
+
+  get text(): string {
+    return this._text
+  }
+
+  set text(value: string) {
+    this._text = value ?? ''
+    this.sync('update')
+  }
+
+  get tooltip(): string | undefined {
+    return this._tooltip
+  }
+
+  set tooltip(value: string | undefined) {
+    this._tooltip = value
+    this.sync('update')
+  }
+
+  get command(): string | Command | undefined {
+    return this._command
+  }
+
+  set command(value: string | Command | undefined) {
+    this._command = value
+    this.sync('update')
+  }
+
+  show(): void {
+    if (this.disposed) return
+    this._visible = true
+    this.sync('show')
+  }
+
+  hide(): void {
+    if (this.disposed) return
+    this._visible = false
+    this.sync('hide')
+  }
+
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    notifyMain('statusBarItem', { action: 'dispose', id: this.id })
+  }
+
+  private sync(action: 'show' | 'hide' | 'update'): void {
+    if (this.disposed) return
+    notifyMain('statusBarItem', {
+      action,
+      id: this.id,
+      text: this._text,
+      tooltip: this._tooltip,
+      command: serializeCommand(this._command),
+      visible: this._visible,
+      alignment: this.alignment,
+      priority: this.priority
+    })
   }
 }
 
@@ -1398,11 +1686,26 @@ export namespace workspace {
   export async function openTextDocument(options: { language?: string; content?: string }): Promise<TextDocument>
   export async function openTextDocument(arg: Uri | string | { language?: string; content?: string }): Promise<TextDocument> {
     if (typeof arg === 'string') {
+      if (arg.includes('://')) {
+        const uri = Uri.parse(arg)
+        const provider = textDocumentContentProviders.get(uri.scheme)
+        if (provider) {
+          const content = await Promise.resolve(provider.provideTextDocumentContent(uri, createCancellationToken()))
+          return __internalOpenDocument({ uri: uri.toString(), languageId: 'plaintext', content: content ?? '', version: 1 })
+        }
+      }
       const content = await fsPromises.readFile(arg, 'utf-8')
       const uri = Uri.file(arg)
       return __internalOpenDocument({ uri: uri.fsPath, languageId: 'plaintext', content, version: 1 })
     }
     if (arg instanceof Uri) {
+      if (arg.scheme !== 'file') {
+        const provider = textDocumentContentProviders.get(arg.scheme)
+        if (provider) {
+          const content = await Promise.resolve(provider.provideTextDocumentContent(arg, createCancellationToken()))
+          return __internalOpenDocument({ uri: arg.toString(), languageId: 'plaintext', content: content ?? '', version: 1 })
+        }
+      }
       const content = await fsPromises.readFile(arg.fsPath, 'utf-8')
       return __internalOpenDocument({ uri: arg.fsPath, languageId: 'plaintext', content, version: 1 })
     }
@@ -1447,15 +1750,51 @@ export namespace workspace {
   }
 
   export function registerTextDocumentContentProvider(_scheme: string, _provider: TextDocumentContentProvider): Disposable {
-    return new Disposable(() => {})
+    textDocumentContentProviders.set(_scheme, _provider)
+    return new Disposable(() => {
+      const current = textDocumentContentProviders.get(_scheme)
+      if (current === _provider) {
+        textDocumentContentProviders.delete(_scheme)
+      }
+    })
   }
 
   // TODO (Phase 2): Implement configuration
-  export function getConfiguration(_section?: string, _scope?: ConfigurationScope): { get: <T>(key: string, defaultValue?: T) => T | undefined; update: (key: string, value: any) => Promise<void> } {
+  export function getConfiguration(_section?: string, _scope?: ConfigurationScope): WorkspaceConfiguration {
     return {
-      get: <T>(_key: string, defaultValue?: T) => defaultValue,
-      update: async (_key: string, _value: any) => {
-        return
+      get: <T>(key: string, defaultValue?: T) => {
+        const fullKey = buildConfigurationKey(_section, key)
+        const { value } = getConfigurationValue<T>(fullKey)
+        return typeof value === 'undefined' ? defaultValue : value
+      },
+      update: async (key: string, value: any, target?: ConfigurationTarget | boolean | null, _overrideInLanguage?: boolean) => {
+        const fullKey = buildConfigurationKey(_section, key)
+        const scope = resolveConfigurationScope(target)
+        if (typeof value === 'undefined') {
+          configurationStore[scope].delete(fullKey)
+        } else {
+          configurationStore[scope].set(fullKey, value)
+        }
+        onDidChangeConfigurationEmitter.fire(createConfigurationChangeEvent(fullKey))
+      },
+      has: (key: string) => {
+        const fullKey = buildConfigurationKey(_section, key)
+        const { value } = getConfigurationValue(fullKey)
+        return typeof value !== 'undefined'
+      },
+      inspect: <T>(key: string): ConfigurationInspect<T> => {
+        const fullKey = buildConfigurationKey(_section, key)
+        return {
+          key: fullKey,
+          defaultValue: undefined,
+          globalValue: configurationStore.global.get(fullKey),
+          workspaceValue: configurationStore.workspace.get(fullKey),
+          workspaceFolderValue: configurationStore.workspaceFolder.get(fullKey),
+          defaultLanguageValue: undefined,
+          globalLanguageValue: undefined,
+          workspaceLanguageValue: undefined,
+          workspaceFolderLanguageValue: undefined
+        }
       }
     }
   }
@@ -1494,6 +1833,13 @@ export interface ConfigurationChangeEvent {
   affectsConfiguration(section: string, scope?: ConfigurationScope): boolean
 }
 
+export interface WorkspaceConfiguration {
+  get: <T>(section: string, defaultValue?: T) => T | undefined
+  update: (section: string, value: any, target?: ConfigurationTarget | boolean | null, overrideInLanguage?: boolean) => Promise<void>
+  has?: (section: string) => boolean
+  inspect?: <T>(section: string) => ConfigurationInspect<T> | undefined
+}
+
 export enum ConfigurationTarget {
   Global = 1,
   Workspace = 2,
@@ -1519,6 +1865,31 @@ export interface TextDocumentContentProvider {
   provideTextDocumentContent(uri: Uri, token: CancellationToken): string | Promise<string>
 }
 
+async function executeBuiltinCommand(command: string, args: unknown[]): Promise<unknown | undefined> {
+  if (command === 'setContext') {
+    const key = typeof args[0] === 'string' ? args[0] : undefined
+    if (key) {
+      commandContexts.set(key, args[1])
+    }
+    return true
+  }
+
+  if (command === 'vscode.open' ||
+      command === 'vscode.diff' ||
+      command === 'workbench.view.scm' ||
+      command === 'workbench.action.openSettings' ||
+      command === 'workbench.action.showCommands' ||
+      command === 'workbench.action.quickOpen') {
+    const normalizedArgs = args.map(serializeCommandArg)
+    return await requestMain('uiRequest', {
+      uiType: 'command',
+      payload: { command, args: normalizedArgs }
+    })
+  }
+
+  return undefined
+}
+
 // ============================================================================
 // Commands API
 // ============================================================================
@@ -1536,6 +1907,10 @@ export namespace commands {
   }
 
   export async function executeCommand<T = any>(command: string, ...rest: any[]): Promise<T | undefined> {
+    const builtinResult = await executeBuiltinCommand(command, rest)
+    if (typeof builtinResult !== 'undefined') {
+      return builtinResult as T
+    }
     let entry = commandRegistry.get(command)
     if (!entry && commandActivationHandler) {
       await Promise.resolve(commandActivationHandler(command))
@@ -1618,16 +1993,16 @@ export namespace window {
     return editor
   }
 
-  export function showErrorMessage(message: string, ...items: string[]): Promise<string | undefined> {
-    return showMessage('error', message, items)
+  export function showErrorMessage(message: string, ...items: Array<string | MessageOptions>): Promise<string | undefined> {
+    return showMessage('error', message, normalizeMessageItems(items))
   }
 
-  export function showWarningMessage(message: string, ...items: string[]): Promise<string | undefined> {
-    return showMessage('warning', message, items)
+  export function showWarningMessage(message: string, ...items: Array<string | MessageOptions>): Promise<string | undefined> {
+    return showMessage('warning', message, normalizeMessageItems(items))
   }
 
-  export function showInformationMessage(message: string, ...items: string[]): Promise<string | undefined> {
-    return showMessage('info', message, items)
+  export function showInformationMessage(message: string, ...items: Array<string | MessageOptions>): Promise<string | undefined> {
+    return showMessage('info', message, normalizeMessageItems(items))
   }
 
   export async function showInputBox(options?: InputBoxOptions): Promise<string | undefined> {
@@ -1657,6 +2032,43 @@ export namespace window {
       return normalized[result] as T
     }
     return undefined
+  }
+
+  export async function showOpenDialog(options?: OpenDialogOptions): Promise<Uri[] | undefined> {
+    const payload = {
+      canSelectFiles: options?.canSelectFiles,
+      canSelectFolders: options?.canSelectFolders,
+      canSelectMany: options?.canSelectMany,
+      defaultPath: options?.defaultUri ? toUri(options.defaultUri).fsPath : undefined
+    }
+    const result = await requestMain<string[] | undefined>('uiRequest', { uiType: 'openDialog', payload })
+    if (!result || !Array.isArray(result) || result.length === 0) {
+      return undefined
+    }
+    return result.map(path => Uri.file(path))
+  }
+
+  export async function showSaveDialog(options?: SaveDialogOptions): Promise<Uri | undefined> {
+    const payload = {
+      defaultPath: options?.defaultUri ? toUri(options.defaultUri).fsPath : undefined
+    }
+    const result = await requestMain<string | undefined>('uiRequest', { uiType: 'saveDialog', payload })
+    if (!result) {
+      return undefined
+    }
+    return Uri.file(result)
+  }
+
+  export function createTerminal(options?: TerminalOptions): Terminal {
+    const name = options?.name || 'Terminal'
+    return {
+      name,
+      sendText: () => {},
+      show: () => {},
+      hide: () => {},
+      dispose: () => {},
+      processId: Promise.resolve(undefined)
+    }
   }
 
   export function registerWebviewViewProvider(viewId: string, provider: WebviewViewProvider, options?: { retainContextWhenHidden?: boolean }): Disposable {
@@ -1707,12 +2119,11 @@ export namespace window {
   }
 
   export function createStatusBarItem(_alignment?: StatusBarAlignment, _priority?: number): StatusBarItem {
-    return {
-      text: '',
-      show: () => {},
-      hide: () => {},
-      dispose: () => {}
-    }
+    statusBarItemCounter += 1
+    const id = `status_bar_${statusBarItemCounter}`
+    const item = new StatusBarItemImpl(id, _alignment, _priority)
+    item.text = ''
+    return item
   }
 
   export function createWebviewPanel(viewType: string, title: string, _showOptions?: ViewColumn | { viewColumn?: ViewColumn; preserveFocus?: boolean }, options?: WebviewOptions): WebviewPanel {
@@ -1720,22 +2131,10 @@ export namespace window {
     const handle = `webview_panel_${viewType}_${webviewHandleCounter}`
     const webview = createWebview(handle, viewType)
     webview.options = options ?? {}
-
-    const disposeEmitter = new EventEmitter<void>()
-    const viewStateEmitter = new EventEmitter<void>()
-
-    return {
-      viewType,
-      title,
-      webview,
-      onDidDispose: disposeEmitter.event,
-      onDidChangeViewState: viewStateEmitter.event,
-      reveal: () => {},
-      dispose: () => {
-        webviewsByHandle.delete(handle)
-        disposeEmitter.fire(undefined as void)
-      }
-    }
+    const viewColumn = typeof _showOptions === 'number' ? _showOptions : _showOptions?.viewColumn
+    const panel = new WebviewPanelImpl(viewType, title, webview, viewColumn)
+    webviewPanelsByHandle.set(handle, panel)
+    return panel
   }
 
   export async function withProgress<T>(options: ProgressOptions, task: (progress: Progress<{ message?: string; increment?: number }>, token: CancellationToken) => Thenable<T>): Promise<T> {
@@ -1871,10 +2270,42 @@ export interface QuickPickOptions {
   placeHolder?: string
 }
 
+export interface MessageOptions {
+  modal?: boolean
+  detail?: string
+}
+
 export interface InputBoxOptions {
   prompt?: string
   placeHolder?: string
   value?: string
+}
+
+export interface OpenDialogOptions {
+  canSelectFiles?: boolean
+  canSelectFolders?: boolean
+  canSelectMany?: boolean
+  defaultUri?: Uri
+}
+
+export interface SaveDialogOptions {
+  defaultUri?: Uri
+}
+
+export interface TerminalOptions {
+  name?: string
+  cwd?: string
+  env?: Record<string, string>
+  shellPath?: string
+}
+
+export interface Terminal {
+  name: string
+  sendText(text: string, addNewLine?: boolean): void
+  show(preserveFocus?: boolean): void
+  hide(): void
+  dispose(): void
+  processId: Promise<number | undefined>
 }
 
 export interface CustomDocument {
@@ -1960,6 +2391,10 @@ export interface WebviewViewProvider {
 export interface WebviewPanel {
   viewType: string
   title: string
+  iconPath?: Uri | { light: Uri; dark: Uri }
+  readonly viewColumn?: ViewColumn
+  readonly active: boolean
+  readonly visible: boolean
   webview: Webview
   onDidDispose: Event<void>
   onDidChangeViewState: Event<void>
@@ -2142,7 +2577,7 @@ export interface LanguageStatusItem {
 // ============================================================================
 
 export function __internalOpenDocument(payload: { uri: string; languageId: string; content: string; version: number }): TextDocument {
-  const uri = Uri.file(payload.uri)
+  const uri = toUri(payload.uri)
   const key = normalizeUriKey(uri)
   const existing = documents.get(key)
   if (existing) {
@@ -2167,8 +2602,34 @@ export function __internalOpenDocument(payload: { uri: string; languageId: strin
   return doc
 }
 
+export function __internalUpdateWorkspace(root: string | null): void {
+  const previous = workspace.workspaceFolders ?? []
+  const next = root ? [{ uri: Uri.file(root), name: path.basename(root), index: 0 }] : undefined
+  const added = next
+    ? next.filter(folder => !previous.some(prev => normalizeUriKey(prev.uri) === normalizeUriKey(folder.uri)))
+    : []
+  const removed = previous.filter(prev => !next || !next.some(folder => normalizeUriKey(prev.uri) === normalizeUriKey(folder.uri)))
+
+  workspace.rootPath = root ?? undefined
+  workspace.name = root ? path.basename(root) : undefined
+  workspace.workspaceFolders = next
+
+  if (added.length > 0 || removed.length > 0) {
+    onDidChangeWorkspaceFoldersEmitter.fire({ added, removed })
+  }
+}
+
+export async function __internalProvideTextDocumentContent(payload: { uri: string }): Promise<string | undefined> {
+  const uri = toUri(payload.uri)
+  const provider = textDocumentContentProviders.get(uri.scheme)
+  if (!provider) {
+    return undefined
+  }
+  return await Promise.resolve(provider.provideTextDocumentContent(uri, createCancellationToken()))
+}
+
 export function __internalChangeDocument(payload: { uri: string; languageId: string; content: string; version: number }): void {
-  const uri = Uri.file(payload.uri)
+  const uri = toUri(payload.uri)
   const key = normalizeUriKey(uri)
   const entry = documents.get(key)
   if (!entry) {
@@ -2185,7 +2646,7 @@ export function __internalChangeDocument(payload: { uri: string; languageId: str
 }
 
 export function __internalCloseDocument(payload: { uri: string }): void {
-  const uri = Uri.file(payload.uri)
+  const uri = toUri(payload.uri)
   const key = normalizeUriKey(uri)
   const entry = documents.get(key)
   if (!entry) {
@@ -2736,6 +3197,11 @@ export function __internalWebviewPostMessage(payload: { handle: string; message:
 }
 
 export function __internalWebviewDispose(payload: { handle: string }): boolean {
+  const panel = webviewPanelsByHandle.get(payload.handle)
+  if (panel) {
+    panel.dispose()
+    return true
+  }
   const webview = webviewsByHandle.get(payload.handle)
   if (!webview) {
     return false

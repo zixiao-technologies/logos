@@ -120,6 +120,21 @@ export const useDiffStore = defineStore('diff', {
     },
 
     /**
+     * 打开自定义内容差异视图
+     */
+    openDiffWithContents(title: string, originalContent: string, modifiedContent: string, language: string) {
+      this.loading = false
+      this.error = null
+      this.filePath = title
+      this.fullPath = ''
+      this.staged = false
+      this.language = language
+      this.originalContent = originalContent
+      this.modifiedContent = modifiedContent
+      this.isOpen = true
+    },
+
+    /**
      * 关闭差异视图
      */
     closeDiff() {

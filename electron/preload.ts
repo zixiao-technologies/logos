@@ -317,9 +317,35 @@ interface ExtensionView {
   extensionId?: string
 }
 
+interface ExtensionScmTitleAction {
+  id: string
+  title: string
+  group?: string
+  when?: string
+  command: string
+  extensionId?: string
+  iconPath?: string
+  iconPathLight?: string
+  iconPathDark?: string
+}
+
+type ExtensionWebviewPanelAction = 'create' | 'update' | 'reveal' | 'dispose'
+type ExtensionStatusBarItemAction = 'show' | 'hide' | 'update' | 'dispose'
+
 interface ExtensionUiContributions {
   containers: ExtensionViewContainer[]
   views: ExtensionView[]
+  scmTitleActions?: ExtensionScmTitleAction[]
+}
+
+interface ExtensionWebviewPanel {
+  handle: string
+  viewType: string
+  title: string
+  options?: {
+    enableScripts?: boolean
+  }
+  action?: ExtensionWebviewPanelAction
 }
 
 interface ExtensionWebviewResolveResult {
@@ -338,6 +364,17 @@ interface ExtensionWebviewMessage {
 interface ExtensionWebviewHtml {
   handle: string
   html: string
+}
+
+interface ExtensionStatusBarItem {
+  id: string
+  text: string
+  tooltip?: string
+  command?: { command: string; title?: string; arguments?: unknown[] }
+  visible?: boolean
+  alignment?: number
+  priority?: number
+  action?: ExtensionStatusBarItemAction
 }
 
 interface ExtensionMarketplaceItem {
@@ -810,6 +847,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('extensions:provideRangeFormattingEdits', payload),
     provideOnTypeFormattingEdits: (payload: ExtensionOnTypeFormattingRequest): Promise<ExtensionTextEdit[]> =>
       ipcRenderer.invoke('extensions:provideOnTypeFormattingEdits', payload),
+    provideTextDocumentContent: (payload: { uri: string }): Promise<string | null> =>
+      ipcRenderer.invoke('extensions:provideTextDocumentContent', payload),
     listUiContributions: (): Promise<ExtensionUiContributions> =>
       ipcRenderer.invoke('extensions:listUiContributions'),
     resolveWebviewView: (payload: { viewId: string }): Promise<ExtensionWebviewResolveResult | null> =>
@@ -818,6 +857,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('extensions:postWebviewMessage', payload),
     disposeWebviewView: (payload: { handle: string }): Promise<boolean> =>
       ipcRenderer.invoke('extensions:disposeWebviewView', payload),
+    disposeWebviewPanel: (payload: { handle: string }): Promise<boolean> =>
+      ipcRenderer.invoke('extensions:disposeWebviewPanel', payload),
     executeCommand: (payload: { command: string; args?: unknown[] }): Promise<unknown> =>
       ipcRenderer.invoke('extensions:executeCommand', payload),
     marketplaceSearch: (query: string, size?: number): Promise<ExtensionMarketplaceItem[]> =>
@@ -846,6 +887,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       const handler = (_: Electron.IpcRendererEvent, payload: ExtensionWebviewHtml) => callback(payload)
       ipcRenderer.on('extensions:webviewHtml', handler)
       return () => ipcRenderer.removeListener('extensions:webviewHtml', handler)
+    },
+    onWebviewPanel: (callback: (payload: ExtensionWebviewPanel) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: ExtensionWebviewPanel) => callback(payload)
+      ipcRenderer.on('extensions:webviewPanel', handler)
+      return () => ipcRenderer.removeListener('extensions:webviewPanel', handler)
+    },
+    onStatusBarItem: (callback: (payload: ExtensionStatusBarItem) => void) => {
+      const handler = (_: Electron.IpcRendererEvent, payload: ExtensionStatusBarItem) => callback(payload)
+      ipcRenderer.on('extensions:statusBarItem', handler)
+      return () => ipcRenderer.removeListener('extensions:statusBarItem', handler)
     }
   },
 
@@ -2424,10 +2475,12 @@ declare global {
         provideFormattingEdits: (payload: ExtensionFormattingRequest) => Promise<ExtensionTextEdit[]>
         provideRangeFormattingEdits: (payload: ExtensionRangeFormattingRequest) => Promise<ExtensionTextEdit[]>
         provideOnTypeFormattingEdits: (payload: ExtensionOnTypeFormattingRequest) => Promise<ExtensionTextEdit[]>
+        provideTextDocumentContent: (payload: { uri: string }) => Promise<string | null>
         listUiContributions: () => Promise<ExtensionUiContributions>
         resolveWebviewView: (payload: { viewId: string }) => Promise<ExtensionWebviewResolveResult | null>
         postWebviewMessage: (payload: ExtensionWebviewMessage) => Promise<boolean>
         disposeWebviewView: (payload: { handle: string }) => Promise<boolean>
+        disposeWebviewPanel: (payload: { handle: string }) => Promise<boolean>
         executeCommand: (payload: { command: string; args?: unknown[] }) => Promise<unknown>
         marketplaceSearch: (query: string, size?: number) => Promise<ExtensionMarketplaceItem[]>
         openRoot: () => Promise<string>
@@ -2439,6 +2492,8 @@ declare global {
         onMessage: (callback: (payload: ExtensionHostMessage) => void) => () => void
         onWebviewMessage: (callback: (payload: ExtensionWebviewMessage) => void) => () => void
         onWebviewHtml: (callback: (payload: ExtensionWebviewHtml) => void) => () => void
+        onWebviewPanel: (callback: (payload: ExtensionWebviewPanel) => void) => () => void
+        onStatusBarItem: (callback: (payload: ExtensionStatusBarItem) => void) => () => void
       }
 
       // 反馈上报

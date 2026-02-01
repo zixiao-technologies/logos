@@ -15,7 +15,7 @@ const iframeRef = ref<HTMLIFrameElement | null>(null)
 let unsubscribeMessage: (() => void) | null = null
 
 const sandbox = computed(() => {
-  return props.enableScripts ? 'allow-scripts allow-same-origin' : 'allow-same-origin'
+  return props.enableScripts ? 'allow-scripts' : ''
 })
 
 const baseThemeVariables = (mode: 'light' | 'dark') => {
@@ -297,19 +297,23 @@ const srcdoc = computed(() => {
   if (!props.html) {
     return ''
   }
-  if (!props.enableScripts || !props.handle) {
+  if (!props.enableScripts) {
     return props.html
   }
   const existingNonce = extractNonce(props.html)
   const nonce = existingNonce ?? createNonce()
   const themeBootstrap = buildThemeBootstrap(themePayload.value, nonce)
+  const safeHandle = props.handle ?? ''
   const bridge = `
     <script nonce="${nonce}">
       (function () {
         let state = null;
         const vscode = {
           postMessage: (message) => {
-            window.parent.postMessage({ __logosWebview: true, handle: '${props.handle}', message }, '*')
+            if (!'${safeHandle}') {
+              return;
+            }
+            window.parent.postMessage({ __logosWebview: true, handle: '${safeHandle}', message }, '*')
           },
           setState: (newState) => {
             state = newState;
@@ -321,13 +325,10 @@ const srcdoc = computed(() => {
       })();
     <${'/'}script>
   `
-  const withHead = hasCspMeta(props.html)
-    ? injectHeadContent(props.html, themeBootstrap)
-    : injectCsp(props.html, nonce, themeBootstrap)
-  if (withHead.includes('</body>')) {
-    return withHead.replace('</body>', `${bridge}</body>`)
-  }
-  return `${withHead}${bridge}`
+  const bootstrap = `${bridge}\n${themeBootstrap}`
+  return hasCspMeta(props.html)
+    ? injectHeadContent(props.html, bootstrap)
+    : injectCsp(props.html, nonce, bootstrap)
 })
 
 const forwardMessage = (message: unknown) => {

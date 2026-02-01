@@ -104,6 +104,39 @@ export const useEditorStore = defineStore('editor', {
     },
 
     /**
+     * 打开虚拟文件 (只读内容)
+     */
+    async openVirtualFile(options: { uri: string; content: string; language?: string; title?: string; readOnly?: boolean }) {
+      const existingTab = this.tabs.find(tab => tab.path === options.uri)
+      if (existingTab) {
+        this.setActiveTab(existingTab.id)
+        return existingTab
+      }
+
+      const cleaned = options.uri.split('?')[0].split('#')[0]
+      const filename = options.title || getFilename(cleaned)
+      const language = options.language || detectLanguage(filename)
+
+      const tab: EditorTab = {
+        id: generateId(),
+        path: options.uri,
+        filename,
+        language,
+        content: options.content,
+        originalContent: options.content,
+        isDirty: false,
+        cursorPosition: { line: 1, column: 1 },
+        scrollPosition: { top: 0, left: 0 },
+        readOnly: options.readOnly ?? true
+      }
+
+      this.tabs.push(tab)
+      this.setActiveTab(tab.id)
+
+      return tab
+    },
+
+    /**
      * 关闭标签页
      */
     closeTab(id: string) {
@@ -210,6 +243,7 @@ export const useEditorStore = defineStore('editor', {
     async saveFile(id: string) {
       const tab = this.tabs.find(t => t.id === id)
       if (!tab) return false
+      if (tab.readOnly || tab.path.includes('://')) return false
 
       try {
         await window.electronAPI.fileSystem.writeFile(tab.path, tab.content)

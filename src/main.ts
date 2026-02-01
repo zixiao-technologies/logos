@@ -95,7 +95,10 @@ import './styles/main.css'
 import { useThemeStore } from '@/stores/theme'
 import { useSettingsStore } from '@/stores/settings'
 import { useNotificationStore } from '@/stores/notification'
+import { useEditorStore } from '@/stores/editor'
+import { useDiffStore } from '@/stores/diff'
 import type { ExtensionHostMessage } from '@/types'
+import { detectLanguage } from '@/utils'
 
 const app = createApp(App)
 const pinia = createPinia()
@@ -112,6 +115,96 @@ const settingsStore = useSettingsStore(pinia)
 settingsStore.init()
 
 const notificationStore = useNotificationStore(pinia)
+const editorStore = useEditorStore(pinia)
+const diffStore = useDiffStore(pinia)
+
+const stripUriQuery = (value: string) => value.split('?')[0].split('#')[0]
+
+const getFilenameFromUri = (value: string) => {
+  const cleaned = stripUriQuery(value)
+  return cleaned.split(/[\\/]/).pop() || cleaned
+}
+
+const decodeFileUri = (value: string) => {
+  if (!value.startsWith('file://')) {
+    return value
+  }
+  return decodeURIComponent(value.replace(/^file:\/\//, ''))
+}
+
+const loadContentForUri = async (value: string) => {
+  const cleaned = value.trim()
+  if (!cleaned.includes('://') || cleaned.startsWith('file://')) {
+    const path = decodeFileUri(cleaned)
+    return await window.electronAPI.fileSystem.readFile(path)
+  }
+  if (window.electronAPI?.extensions?.provideTextDocumentContent) {
+    const content = await window.electronAPI.extensions.provideTextDocumentContent({ uri: cleaned })
+    return content ?? ''
+  }
+  return ''
+}
+
+// Expose a handler for extension-driven commands (used by the extension host bridge)
+(window as any).__logosHandleExtensionCommand = async (payload: { command?: string; args?: unknown[] }) => {
+  const command = payload.command
+  const args = payload.args ?? []
+
+  if (!command) {
+    return undefined
+  }
+
+  if (command === 'workbench.view.scm') {
+    window.dispatchEvent(new CustomEvent('extensions:open-scm'))
+    return true
+  }
+
+  if (command === 'workbench.action.openSettings') {
+    window.dispatchEvent(new CustomEvent('extensions:open-settings'))
+    return true
+  }
+
+  if (command === 'workbench.action.showCommands') {
+    window.dispatchEvent(new CustomEvent('extensions:show-commands'))
+    return true
+  }
+
+  if (command === 'workbench.action.quickOpen') {
+    window.dispatchEvent(new CustomEvent('extensions:quick-open'))
+    return true
+  }
+
+  if (command === 'vscode.open') {
+    const target = typeof args[0] === 'string' ? args[0] : ''
+    if (!target) return false
+    if (!target.includes('://') || target.startsWith('file://')) {
+      const path = decodeFileUri(target)
+      await editorStore.openFile(path)
+      router.push('/')
+      return true
+    }
+    const content = await loadContentForUri(target)
+    const title = getFilenameFromUri(target)
+    const language = detectLanguage(title)
+    await editorStore.openVirtualFile({ uri: target, content, language, title, readOnly: true })
+    router.push('/')
+    return true
+  }
+
+  if (command === 'vscode.diff') {
+    const left = typeof args[0] === 'string' ? args[0] : ''
+    const right = typeof args[1] === 'string' ? args[1] : ''
+    const title = typeof args[2] === 'string' ? args[2] : 'Diff'
+    const leftContent = await loadContentForUri(left)
+    const rightContent = await loadContentForUri(right)
+    const language = detectLanguage(getFilenameFromUri(right || left || title))
+    diffStore.openDiffWithContents(title, leftContent, rightContent, language)
+    router.push('/diff')
+    return true
+  }
+
+  return undefined
+}
 
 if (window.electronAPI?.extensions?.onMessage) {
   window.electronAPI.extensions.onMessage((payload: ExtensionHostMessage) => {

@@ -49,6 +49,12 @@ const routes: RouteRecordRaw[] = [
     name: 'reflog',
     component: () => import('@/views/ReflogView.vue'),
     meta: { title: 'Reflog' }
+  },
+  {
+    path: '/extension-panel',
+    name: 'extension-panel',
+    component: () => import('@/views/ExtensionPanelView.vue'),
+    meta: { title: 'Extension' }
   }
 ]
 

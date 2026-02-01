@@ -24,6 +24,8 @@ export interface EditorTab {
   scrollPosition: ScrollPosition
   /** 视图状态 (Monaco 专用) */
   viewState?: unknown
+  /** 只读 / 虚拟文档 */
+  readOnly?: boolean
 }
 
 /** 光标位置 */

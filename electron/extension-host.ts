@@ -35,6 +35,7 @@ import {
   __internalProvideRangeFormattingEdits,
   __internalProvideOnTypeFormattingEdits,
   __internalProvideCodeLenses,
+  __internalProvideTextDocumentContent,
   __internalResolveWebviewView,
   __internalWebviewPostMessage,
   __internalWebviewDispose,
@@ -367,6 +368,7 @@ type HostMessage =
   | { type: 'provideRangeFormattingEdits'; requestId: string; payload: { uri: string; range: { start: { line: number; character: number }; end: { line: number; character: number } }; options?: { tabSize: number; insertSpaces: boolean } } }
   | { type: 'provideOnTypeFormattingEdits'; requestId: string; payload: { uri: string; position: { line: number; character: number }; ch: string; options?: { tabSize: number; insertSpaces: boolean } } }
   | { type: 'provideCodeLenses'; requestId: string; payload: { uri: string } }
+  | { type: 'provideTextDocumentContent'; requestId: string; payload: { uri: string } }
   | { type: 'resolveWebviewView'; requestId: string; payload: { viewId: string } }
   | { type: 'webviewPostMessage'; requestId: string; payload: { handle: string; message: unknown } }
   | { type: 'webviewDispose'; requestId: string; payload: { handle: string } }
@@ -745,6 +747,10 @@ function startStub(): void {
 
       case 'provideCodeLenses':
         void handleRequest(typedMessage.requestId, async () => await __internalProvideCodeLenses(typedMessage.payload))
+        break
+
+      case 'provideTextDocumentContent':
+        void handleRequest(typedMessage.requestId, async () => await __internalProvideTextDocumentContent(typedMessage.payload))
         break
 
       case 'resolveWebviewView':

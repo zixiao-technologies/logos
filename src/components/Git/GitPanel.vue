@@ -3,13 +3,15 @@
  * Git 面板主组件
  */
 
-import { ref, watch, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useGitStore } from '@/stores/git'
 import { useFileExplorerStore } from '@/stores/fileExplorer'
 import { useEditorStore } from '@/stores/editor'
 import { useDiffStore } from '@/stores/diff'
 import { useRouter } from 'vue-router'
 import { useMergeStore } from '@/stores/merge'
+import { useExtensionUiStore } from '@/stores/extensionUi'
+import { useThemeStore } from '@/stores/theme'
 import BranchSelector from './BranchSelector.vue'
 import ChangedFileList from './ChangedFileList.vue'
 import CommitBox from './CommitBox.vue'
@@ -30,6 +32,8 @@ const editorStore = useEditorStore()
 const diffStore = useDiffStore()
 const router = useRouter()
 const mergeStore = useMergeStore()
+const extensionUiStore = useExtensionUiStore()
+const themeStore = useThemeStore()
 
 // 监听冲突检测事件
 const handleConflictDetected = async () => {
@@ -58,6 +62,39 @@ const showPullDialog = ref(false)
 
 // 当前仓库路径
 const repoPath = () => fileExplorerStore.rootPath || ''
+
+const toExtensionUrl = (rawPath?: string): string | undefined => {
+  if (!rawPath) {
+    return undefined
+  }
+  const normalized = rawPath.replace(/\\/g, '/')
+  return `logos-extension://local-file${encodeURI(normalized)}`
+}
+
+const scmTitleActions = computed(() => {
+  const seen = new Set<string>()
+  return extensionUiStore.scmTitleActions.filter(action => {
+    if (seen.has(action.command)) {
+      return false
+    }
+    seen.add(action.command)
+    return true
+  })
+})
+
+const getActionIcon = (action: { iconPath?: string; iconPathLight?: string; iconPathDark?: string }): string | undefined => {
+  if (action.iconPath) {
+    return toExtensionUrl(action.iconPath)
+  }
+  return toExtensionUrl(themeStore.isDark ? action.iconPathDark : action.iconPathLight)
+}
+
+const handleScmAction = async (command: string) => {
+  if (!window.electronAPI?.extensions?.executeCommand) {
+    return
+  }
+  await window.electronAPI.extensions.executeCommand({ command })
+}
 
 // 初始化
 onMounted(async () => {
@@ -256,6 +293,15 @@ onUnmounted(() => {
     <div class="panel-header">
       <span class="title">源代码管理</span>
       <div class="actions">
+        <mdui-button-icon
+          v-for="action in scmTitleActions"
+          :key="action.id"
+          @click="handleScmAction(action.command)"
+          :title="action.title"
+        >
+          <img v-if="getActionIcon(action)" :src="getActionIcon(action)" class="scm-action-icon" alt="" />
+          <span v-else class="scm-action-label">{{ action.title }}</span>
+        </mdui-button-icon>
         <mdui-button-icon @click="handleRefresh" title="刷新" :disabled="gitStore.loading">
           <mdui-icon-refresh></mdui-icon-refresh>
         </mdui-button-icon>
@@ -460,6 +506,17 @@ onUnmounted(() => {
 
 .panel-header mdui-button-icon {
   --mdui-comp-button-icon-size: 28px;
+}
+
+.scm-action-icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.scm-action-label {
+  font-size: 10px;
+  text-transform: uppercase;
 }
 
 .branch-section {

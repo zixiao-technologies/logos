@@ -29,6 +29,8 @@ import { IntelligenceModeIndicator } from '@/components/StatusBar'
 import { GitOperationIndicator } from '@/components/StatusBar'
 import type { IndexingProgress, LanguageServerStatus } from '@/types/intelligence'
 import { useExtensionUiStore } from '@/stores/extensionUi'
+import { useExtensionPanelsStore } from '@/stores/extensionPanels'
+import { useExtensionStatusBarStore } from '@/stores/extensionStatusBar'
 import { useProblemsStore } from '@/stores/problems'
 import { createAppCommands } from '@/config/commands'
 import * as monaco from 'monaco-editor'
@@ -66,6 +68,8 @@ const settingsStore = useSettingsStore()
 const bottomPanelStore = useBottomPanelStore()
 const intelligenceStore = useIntelligenceStore()
 const extensionUiStore = useExtensionUiStore()
+const extensionPanelsStore = useExtensionPanelsStore()
+const extensionStatusBarStore = useExtensionStatusBarStore()
 const problemsStore = useProblemsStore()
 const notificationStore = useNotificationStore()
 
@@ -205,6 +209,23 @@ const handleWorkbenchShortcuts = (event: KeyboardEvent) => {
 const sidebarOpen = ref(true)
 const sidebarWidth = ref(260)
 const activeSidebarPanel = ref('explorer')
+
+const handleExtensionOpenScm = () => {
+  activeSidebarPanel.value = 'git'
+  sidebarOpen.value = true
+}
+
+const handleExtensionOpenSettings = () => {
+  router.push('/settings')
+}
+
+const handleExtensionShowCommands = () => {
+  openCommandPalette()
+}
+
+const handleExtensionQuickOpen = () => {
+  openQuickOpen()
+}
 
 // 导航项 (移除终端，改为底部面板)
 const navItems = [
@@ -400,6 +421,31 @@ const activeExtensionContainerId = computed(() => {
 })
 
 const currentRoute = computed(() => route.path)
+const lastNonExtensionRoute = ref('/')
+
+watch(
+  () => route.path,
+  (path) => {
+    if (path !== '/extension-panel') {
+      lastNonExtensionRoute.value = path
+    }
+  }
+)
+
+watch(
+  () => extensionPanelsStore.activeHandle,
+  (handle) => {
+    if (handle) {
+      if (route.path !== '/extension-panel') {
+        router.push('/extension-panel')
+      }
+      return
+    }
+    if (route.path === '/extension-panel') {
+      router.push(lastNonExtensionRoute.value || '/')
+    }
+  }
+)
 
 // 状态栏信息
 const statusBarInfo = computed(() => {
@@ -412,6 +458,20 @@ const statusBarInfo = computed(() => {
     column: activeTab?.cursorPosition.column || 1
   }
 })
+
+const extensionStatusBarLeft = computed(() => extensionStatusBarStore.leftItems)
+const extensionStatusBarRight = computed(() => extensionStatusBarStore.rightItems)
+
+const handleExtensionStatusBarClick = async (item: { command?: { command: string; arguments?: unknown[] } }) => {
+  const command = item.command?.command
+  if (!command || !window.electronAPI?.extensions?.executeCommand) {
+    return
+  }
+  await window.electronAPI.extensions.executeCommand({
+    command,
+    args: item.command?.arguments
+  })
+}
 
 const lspSummary = computed(() => {
   const ready = lspServers.value.filter(s => s.status === 'ready').length
@@ -446,6 +506,10 @@ onMounted(async () => {
   // 注册 VS Code 风格快捷键监听器
   window.addEventListener('keydown', handleWorkbenchShortcuts)
   document.addEventListener('click', handleCommandCenterOutsideClick)
+  window.addEventListener('extensions:open-scm', handleExtensionOpenScm)
+  window.addEventListener('extensions:open-settings', handleExtensionOpenSettings)
+  window.addEventListener('extensions:show-commands', handleExtensionShowCommands)
+  window.addEventListener('extensions:quick-open', handleExtensionQuickOpen)
   // 监听问题变化
   problemsStore.refreshFromMonaco()
   problemsSubscription = monaco.editor.onDidChangeMarkers(() => {
@@ -483,6 +547,8 @@ onMounted(async () => {
     }
 
     extensionUiStore.init()
+    extensionPanelsStore.init()
+    extensionStatusBarStore.init()
 
     // 订阅索引进度
     unsubscribeProgress = window.electronAPI.intelligence.onIndexingProgress((progress) => {
@@ -537,6 +603,10 @@ onUnmounted(() => {
   // 移除 VS Code 风格快捷键监听器
   window.removeEventListener('keydown', handleWorkbenchShortcuts)
   document.removeEventListener('click', handleCommandCenterOutsideClick)
+  window.removeEventListener('extensions:open-scm', handleExtensionOpenScm)
+  window.removeEventListener('extensions:open-settings', handleExtensionOpenSettings)
+  window.removeEventListener('extensions:show-commands', handleExtensionShowCommands)
+  window.removeEventListener('extensions:quick-open', handleExtensionQuickOpen)
 
   if (problemsSubscription) {
     problemsSubscription.dispose()
@@ -820,8 +890,28 @@ onUnmounted(() => {
           <mdui-icon-error v-else></mdui-icon-error>
           LSP {{ lspSummary.ready }}/{{ lspSummary.starting }}/{{ lspSummary.error }}
         </span>
+        <span
+          v-for="item in extensionStatusBarLeft"
+          :key="item.id"
+          class="status-item"
+          :class="{ clickable: item.command?.command }"
+          :title="item.tooltip"
+          @click="item.command?.command && handleExtensionStatusBarClick(item)"
+        >
+          {{ item.text }}
+        </span>
       </div>
       <div class="status-right">
+        <span
+          v-for="item in extensionStatusBarRight"
+          :key="item.id"
+          class="status-item"
+          :class="{ clickable: item.command?.command }"
+          :title="item.tooltip"
+          @click="item.command?.command && handleExtensionStatusBarClick(item)"
+        >
+          {{ item.text }}
+        </span>
         <span class="status-item">{{ statusBarInfo.encoding }}</span>
         <span class="status-item">{{ statusBarInfo.language }}</span>
         <span class="status-item">

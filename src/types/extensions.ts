@@ -223,9 +223,31 @@ export interface ExtensionView {
   extensionId?: string
 }
 
+export interface ExtensionScmTitleAction {
+  id: string
+  title: string
+  group?: string
+  when?: string
+  command: string
+  extensionId?: string
+  iconPath?: string
+  iconPathLight?: string
+  iconPathDark?: string
+}
+
 export interface ExtensionUiContributions {
   containers: ExtensionViewContainer[]
   views: ExtensionView[]
+  scmTitleActions?: ExtensionScmTitleAction[]
+}
+
+export interface ExtensionWebviewPanel {
+  handle: string
+  viewType: string
+  title: string
+  options?: {
+    enableScripts?: boolean
+  }
 }
 
 export interface ExtensionWebviewResolveResult {
@@ -244,6 +266,17 @@ export interface ExtensionWebviewMessage {
 export interface ExtensionWebviewHtml {
   handle: string
   html: string
+}
+
+export interface ExtensionStatusBarItem {
+  id: string
+  text: string
+  tooltip?: string
+  command?: { command: string; title?: string; arguments?: unknown[] }
+  visible?: boolean
+  alignment?: number
+  priority?: number
+  action?: 'show' | 'hide' | 'update' | 'dispose'
 }
 
 export interface ExtensionMarketplaceItem {

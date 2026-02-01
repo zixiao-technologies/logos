@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, dialog } from 'electron'
 import { fork, ChildProcess } from 'child_process'
 import { promises as fs } from 'fs'
 import * as fsSync from 'fs'
@@ -52,10 +52,12 @@ interface ExtensionManifest {
   icon?: string
   categories?: string[]
   contributes?: {
+    commands?: Array<{ command: string; title?: string; icon?: string | { light?: string; dark?: string } }>
     viewsContainers?: {
       activitybar?: Array<{ id: string; title?: string; icon?: string }>
     }
     views?: Record<string, Array<{ id: string; name?: string }>>
+    menus?: Record<string, Array<{ command: string; when?: string; group?: string }>>
   }
 }
 
@@ -99,6 +101,19 @@ interface ExtensionView {
 interface ExtensionUiContributions {
   containers: ExtensionViewContainer[]
   views: ExtensionView[]
+  scmTitleActions?: ExtensionScmTitleAction[]
+}
+
+interface ExtensionScmTitleAction {
+  id: string
+  title: string
+  group?: string
+  when?: string
+  command: string
+  extensionId?: string
+  iconPath?: string
+  iconPathLight?: string
+  iconPathDark?: string
 }
 
 let hostProcess: ChildProcess | null = null
@@ -230,7 +245,31 @@ function handleHostMessage(message: unknown): void {
     return
   }
 
-  const typedMessage = message as { type?: string; pid?: number; level?: string; message?: unknown; requestId?: string; ok?: boolean; payload?: unknown; error?: string; url?: string; uiType?: string; handle?: string; html?: string }
+  const typedMessage = message as {
+    type?: string
+    pid?: number
+    level?: string
+    message?: unknown
+    requestId?: string
+    ok?: boolean
+    payload?: unknown
+    error?: string
+    url?: string
+    uiType?: string
+    handle?: string
+    html?: string
+    action?: string
+    viewType?: string
+    title?: string
+    options?: unknown
+    id?: string
+    text?: string
+    tooltip?: string
+    command?: unknown
+    visible?: boolean
+    alignment?: number
+    priority?: number
+  }
 
   if (typedMessage.type === 'ready') {
     hostState = {
@@ -273,6 +312,26 @@ function handleHostMessage(message: unknown): void {
         handle: typedMessage.handle,
         html: typedMessage.html
       })
+    }
+  }
+
+  if (typedMessage.type === 'webviewPanel' && typedMessage.handle) {
+    const window = getMainWindow()
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('extensions:webviewPanel', {
+        action: typedMessage.action,
+        handle: typedMessage.handle,
+        viewType: typedMessage.viewType,
+        title: typedMessage.title,
+        options: typedMessage.options
+      })
+    }
+  }
+
+  if (typedMessage.type === 'statusBarItem' && typedMessage.id) {
+    const window = getMainWindow()
+    if (window && !window.isDestroyed()) {
+      window.webContents.send('extensions:statusBarItem', typedMessage)
     }
   }
 
@@ -358,6 +417,43 @@ async function handleUiRequest(requestId: string, uiType: string, payload?: unkn
     }
     const matched = items.findIndex(item => item.label === trimmed)
     sendUiResponse(requestId, true, matched >= 0 ? matched : undefined)
+    return
+  }
+
+  if (uiType === 'openDialog') {
+    const openPayload = payload as { canSelectFiles?: boolean; canSelectFolders?: boolean; canSelectMany?: boolean; defaultPath?: string }
+    const properties: Array<'openFile' | 'openDirectory' | 'multiSelections'> = []
+    if (openPayload.canSelectFolders) {
+      properties.push('openDirectory')
+    }
+    if (openPayload.canSelectFiles !== false) {
+      properties.push('openFile')
+    }
+    if (openPayload.canSelectMany) {
+      properties.push('multiSelections')
+    }
+    const result = await dialog.showOpenDialog(window, {
+      defaultPath: openPayload.defaultPath,
+      properties
+    })
+    sendUiResponse(requestId, true, result.canceled ? undefined : result.filePaths)
+    return
+  }
+
+  if (uiType === 'saveDialog') {
+    const savePayload = payload as { defaultPath?: string }
+    const result = await dialog.showSaveDialog(window, {
+      defaultPath: savePayload.defaultPath
+    })
+    sendUiResponse(requestId, true, result.canceled ? undefined : result.filePath)
+    return
+  }
+
+  if (uiType === 'command') {
+    const commandPayload = payload as { command?: string; args?: unknown[] }
+    const script = `window.__logosHandleExtensionCommand ? window.__logosHandleExtensionCommand(${JSON.stringify(commandPayload)}) : Promise.resolve(undefined)`
+    const result = await window.webContents.executeJavaScript(script, true)
+    sendUiResponse(requestId, true, result ?? undefined)
     return
   }
 
@@ -857,6 +953,7 @@ export async function listUiContributions(): Promise<ExtensionUiContributions> {
   const entries = await fs.readdir(root, { withFileTypes: true })
   const containers: ExtensionViewContainer[] = []
   const views: ExtensionView[] = []
+  const scmTitleActions: ExtensionScmTitleAction[] = []
 
   for (const entry of entries) {
     if (!entry.isDirectory()) {
@@ -890,6 +987,51 @@ export async function listUiContributions(): Promise<ExtensionUiContributions> {
         })
       }
 
+      const commandEntries = manifest.contributes?.commands ?? []
+      const commandMeta = new Map<string, { title?: string; icon?: string | { light?: string; dark?: string } }>()
+      for (const entry of commandEntries) {
+        if (!entry?.command) {
+          continue
+        }
+        commandMeta.set(entry.command, { title: entry.title, icon: entry.icon })
+      }
+
+      const menus = manifest.contributes?.menus ?? {}
+      const scmTitle = menus['scm/title'] ?? []
+      if (Array.isArray(scmTitle)) {
+        for (const menuEntry of scmTitle) {
+          if (!menuEntry?.command) {
+            continue
+          }
+          const meta = commandMeta.get(menuEntry.command)
+          let iconPath: string | undefined
+          let iconPathLight: string | undefined
+          let iconPathDark: string | undefined
+          const icon = meta?.icon
+          if (typeof icon === 'string') {
+            iconPath = await resolveIconPath(extensionPath, icon)
+          } else if (icon && typeof icon === 'object') {
+            if (icon.light) {
+              iconPathLight = await resolveIconPath(extensionPath, icon.light)
+            }
+            if (icon.dark) {
+              iconPathDark = await resolveIconPath(extensionPath, icon.dark)
+            }
+          }
+          scmTitleActions.push({
+            id: `${extensionId}:${menuEntry.command}`,
+            title: meta?.title || menuEntry.command,
+            group: menuEntry.group,
+            when: menuEntry.when,
+            command: menuEntry.command,
+            extensionId,
+            iconPath,
+            iconPathLight,
+            iconPathDark
+          })
+        }
+      }
+
       const contributesViews = manifest.contributes?.views ?? {}
       for (const [containerId, viewEntries] of Object.entries(contributesViews)) {
         if (!Array.isArray(viewEntries)) {
@@ -914,9 +1056,10 @@ export async function listUiContributions(): Promise<ExtensionUiContributions> {
 
   console.info('[extension-host] UI contributions', {
     containers: containers.length,
-    views: views.length
+    views: views.length,
+    scmTitleActions: scmTitleActions.length
   })
-  return { containers, views }
+  return { containers, views, scmTitleActions }
 }
 
 export function registerExtensionHandlers(getWindow: () => BrowserWindow | null): void {
@@ -1145,6 +1288,14 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
     }
   })
 
+  ipcMain.handle('extensions:provideTextDocumentContent', async (_event, payload: { uri: string }) => {
+    try {
+      return await requestHost({ type: 'provideTextDocumentContent', payload })
+    } catch {
+      return null
+    }
+  })
+
   ipcMain.handle('extensions:resolveWebviewView', async (_event, payload: { viewId: string }) => {
     try {
       return await requestHost({ type: 'resolveWebviewView', payload })
@@ -1181,6 +1332,15 @@ export function registerExtensionHandlers(getWindow: () => BrowserWindow | null)
   })
 
   ipcMain.handle('extensions:disposeWebviewView', async (_event, payload: { handle: string }) => {
+    try {
+      await requestHost({ type: 'webviewDispose', payload })
+      return true
+    } catch {
+      return false
+    }
+  })
+
+  ipcMain.handle('extensions:disposeWebviewPanel', async (_event, payload: { handle: string }) => {
     try {
       await requestHost({ type: 'webviewDispose', payload })
       return true

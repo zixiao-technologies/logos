@@ -3,37 +3,19 @@
 ; Expected output: release\win-unpacked\Logos.exe
 
 #define AppName "Logos"
-#define PackageJsonFile "..\..\package.json"
-#define PackageJson LoadStringFromFile(PackageJsonFile)
-#define VersionKey "\"version\""
-#define VersionKeyPos Pos(VersionKey, PackageJson)
-#if VersionKeyPos == 0
-  #error "Unable to locate version in package.json"
-#endif
-#define VersionSlice Copy(PackageJson, VersionKeyPos, 256)
-#define ColonPos Pos(":", VersionSlice)
-#if ColonPos == 0
-  #error "Unable to parse version from package.json (missing colon)"
-#endif
-#define AfterColon Copy(VersionSlice, ColonPos + 1, 256)
-#define QuoteStart Pos("\"", AfterColon)
-#if QuoteStart == 0
-  #error "Unable to parse version from package.json (missing opening quote)"
-#endif
-#define AfterQuoteStart Copy(AfterColon, QuoteStart + 1, 256)
-#define QuoteEnd Pos("\"", AfterQuoteStart)
-#if QuoteEnd == 0
-  #error "Unable to parse version from package.json (missing closing quote)"
-#endif
-#define AppVersion Trim(Copy(AfterQuoteStart, 1, QuoteEnd - 1))
-#define AppPublisher "Zixiao Labs"
+#define AppPublisher "Zixiao System"
 #define AppId "io.zixiao.logos"
-#define AppURL "https://github.com/zixiao-labs/logos"
+#define AppURL "https://github.com/Zixiao-System/logos"
 #define AppExeName "Logos.exe"
 #define AppSource "..\..\release\win-unpacked"
 #define AppIcon "..\..\build\icon.ico"
 #define AppLicense "..\..\LICENSE"
 #define AppOutputDir "..\..\release\inno"
+#ifexist "version.iss"
+  #include "version.iss"
+#else
+  #error "Missing packaging/windows/version.iss. Run: node scripts/gen-inno-version.cjs"
+#endif
 #define AssocExt ".logos"
 #define AssocKey "LogosFile"
 #define AssocDescription "Logos File"

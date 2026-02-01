@@ -5,8 +5,7 @@
  * loader can track activation state and workspace context.
  */
 
-import path from 'path'
-import { EventEmitter, Uri, workspace, vscodeModule, __internalRegisterExtension, __internalSetCommandActivationHandler, __internalUpdateExtensionActivation } from './vscode-api-stub'
+import { EventEmitter, vscodeModule, __internalRegisterExtension, __internalSetCommandActivationHandler, __internalUpdateExtensionActivation, __internalUpdateWorkspace } from './vscode-api-stub'
 
 type CommandActivationHandler = (command: string) => Promise<void> | void
 
@@ -27,14 +26,7 @@ let commandActivationHandler: CommandActivationHandler | null = null
 export const vscodeApi = vscodeModule
 
 export function setWorkspaceRoot(root: string | null): void {
-  workspace.rootPath = root ?? undefined
-  if (root) {
-    workspace.name = path.basename(root)
-    workspace.workspaceFolders = [{ uri: Uri.file(root), name: workspace.name, index: 0 }]
-  } else {
-    workspace.name = undefined
-    workspace.workspaceFolders = undefined
-  }
+  __internalUpdateWorkspace(root)
 }
 
 export function setCommandActivationHandler(handler: CommandActivationHandler): void {
