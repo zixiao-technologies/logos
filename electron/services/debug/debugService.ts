@@ -380,6 +380,63 @@ export class DebugService extends EventEmitter {
   }
 
   /**
+   * Edit an existing breakpoint's properties
+   */
+  async editBreakpoint(
+    breakpointId: string,
+    options: { condition?: string; hitCondition?: string; logMessage?: string }
+  ): Promise<BreakpointInfo | null> {
+    for (const [filePath, breakpoints] of this.breakpoints.entries()) {
+      const bp = breakpoints.find(b => b.id === breakpointId)
+      if (bp) {
+        bp.condition = options.condition
+        bp.hitCondition = options.hitCondition
+        bp.logMessage = options.logMessage
+        bp.type = options.logMessage ? 'logpoint' as BreakpointType :
+                  options.condition ? 'conditional' as BreakpointType :
+                  'line' as BreakpointType
+
+        await this.syncBreakpointsToAdapterForFile(filePath)
+        this.emit('breakpointChanged', bp)
+        this.sendToRenderer('debug:breakpointChanged', bp)
+        return bp
+      }
+    }
+    return null
+  }
+
+  /**
+   * Set exception breakpoints for the active session
+   */
+  async setExceptionBreakpoints(
+    filters: string[],
+    filterOptions?: Array<{ filterId: string; condition?: string }>,
+    sessionId?: string
+  ): Promise<void> {
+    const entry = this.getSessionEntry(sessionId)
+    if (!entry) return
+
+    await entry.client.setExceptionBreakpoints(filters, filterOptions)
+  }
+
+  /**
+   * Get exception filters from session capabilities
+   */
+  getExceptionFilters(sessionId?: string): Array<{ filter: string; label: string; description?: string; default?: boolean; supportsCondition?: boolean; conditionDescription?: string }> {
+    const entry = this.getSessionEntry(sessionId)
+    if (!entry?.session.capabilities) return []
+
+    return (entry.session.capabilities.exceptionBreakpointFilters || []).map(f => ({
+      filter: f.filter,
+      label: f.label,
+      description: f.description,
+      default: f.default,
+      supportsCondition: f.supportsCondition,
+      conditionDescription: f.conditionDescription
+    }))
+  }
+
+  /**
    * Get all breakpoints
    */
   getAllBreakpoints(): BreakpointInfo[] {

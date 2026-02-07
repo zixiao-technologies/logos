@@ -2141,6 +2141,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getBreakpointsForFile: (filePath: string): Promise<BreakpointInfo[]> =>
       ipcRenderer.invoke('debug:getBreakpointsForFile', filePath),
 
+    editBreakpoint: (
+      breakpointId: string,
+      options: { condition?: string; hitCondition?: string; logMessage?: string }
+    ): Promise<{ success: boolean; breakpoint?: BreakpointInfo; error?: string }> =>
+      ipcRenderer.invoke('debug:editBreakpoint', breakpointId, options),
+
+    // 异常断点
+    setExceptionBreakpoints: (
+      filters: string[],
+      filterOptions?: Array<{ filterId: string; condition?: string }>,
+      sessionId?: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('debug:setExceptionBreakpoints', filters, filterOptions, sessionId),
+
+    getExceptionFilters: (sessionId?: string): Promise<{ success: boolean; filters?: Array<{ filter: string; label: string; description?: string; default?: boolean; supportsCondition?: boolean; conditionDescription?: string }>; error?: string }> =>
+      ipcRenderer.invoke('debug:getExceptionFilters', sessionId),
+
     // 变量和栈帧
     getThreads: (sessionId?: string): Promise<{ success: boolean; threads?: DebugThread[]; error?: string }> =>
       ipcRenderer.invoke('debug:getThreads', sessionId),
@@ -3475,6 +3492,18 @@ declare global {
         toggleBreakpointAtLine: (filePath: string, line: number) => Promise<{ success: boolean; breakpoint?: BreakpointInfo | null; error?: string }>
         getAllBreakpoints: () => Promise<BreakpointInfo[]>
         getBreakpointsForFile: (filePath: string) => Promise<BreakpointInfo[]>
+        editBreakpoint: (
+          breakpointId: string,
+          options: { condition?: string; hitCondition?: string; logMessage?: string }
+        ) => Promise<{ success: boolean; breakpoint?: BreakpointInfo; error?: string }>
+
+        // 异常断点
+        setExceptionBreakpoints: (
+          filters: string[],
+          filterOptions?: Array<{ filterId: string; condition?: string }>,
+          sessionId?: string
+        ) => Promise<{ success: boolean; error?: string }>
+        getExceptionFilters: (sessionId?: string) => Promise<{ success: boolean; filters?: Array<{ filter: string; label: string; description?: string; default?: boolean; supportsCondition?: boolean; conditionDescription?: string }>; error?: string }>
 
         // 变量和栈帧
         getThreads: (sessionId?: string) => Promise<{ success: boolean; threads?: DebugThread[]; error?: string }>

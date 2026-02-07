@@ -136,6 +136,18 @@ export interface DebugSession {
   threads: DebugThread[]
   currentThreadId?: number
   currentFrameId?: number
+  capabilities?: Record<string, unknown>
+}
+
+/** 异常过滤器状态 */
+export interface ExceptionFilterState {
+  filterId: string
+  label: string
+  description?: string
+  enabled: boolean
+  supportsCondition: boolean
+  conditionDescription?: string
+  condition?: string
 }
 
 /** 调试状态 */
@@ -164,6 +176,9 @@ export interface DebugState {
   // 监视
   watchExpressions: WatchExpression[]
 
+  // 异常断点过滤器
+  exceptionFilters: ExceptionFilterState[]
+
   // 控制台
   consoleMessages: DebugConsoleMessage[]
 
@@ -186,6 +201,7 @@ export const useDebugStore = defineStore('debug', {
     scopes: [],
     variables: new Map(),
     watchExpressions: [],
+    exceptionFilters: [],
     consoleMessages: [],
     isPanelVisible: false,
     activePanel: 'variables'
@@ -252,6 +268,15 @@ export const useDebugStore = defineStore('debug', {
       this.sessions.push(session)
       this.activeSessionId = session.id
       this.isPanelVisible = true
+
+      // Auto-initialize exception filters from capabilities
+      if (session.capabilities) {
+        const caps = session.capabilities as Record<string, unknown>
+        const filters = caps.exceptionBreakpointFilters as Array<{ filter: string; label: string; description?: string; default?: boolean; supportsCondition?: boolean; conditionDescription?: string }> | undefined
+        if (filters && filters.length > 0) {
+          this.initExceptionFilters(filters)
+        }
+      }
     },
 
     /** 更新会话状态 */
@@ -526,6 +551,58 @@ export const useDebugStore = defineStore('debug', {
       if (index !== -1) {
         this.watchExpressions.splice(index, 1)
       }
+    },
+
+    // ============ 异常断点过滤器 ============
+
+    /** 从 DAP capabilities 初始化异常过滤器 */
+    initExceptionFilters(filters: Array<{ filter: string; label: string; description?: string; default?: boolean; supportsCondition?: boolean; conditionDescription?: string }>) {
+      this.exceptionFilters = filters.map(f => ({
+        filterId: f.filter,
+        label: f.label,
+        description: f.description,
+        enabled: f.default ?? false,
+        supportsCondition: f.supportsCondition ?? false,
+        conditionDescription: f.conditionDescription,
+        condition: undefined
+      }))
+    },
+
+    /** 切换异常过滤器启用状态 */
+    toggleExceptionFilter(filterId: string) {
+      const filter = this.exceptionFilters.find(f => f.filterId === filterId)
+      if (filter) {
+        filter.enabled = !filter.enabled
+        this.syncExceptionFilters()
+      }
+    },
+
+    /** 更新异常过滤器条件 */
+    updateExceptionFilterCondition(filterId: string, condition: string) {
+      const filter = this.exceptionFilters.find(f => f.filterId === filterId)
+      if (filter && filter.supportsCondition) {
+        filter.condition = condition
+        this.syncExceptionFilters()
+      }
+    },
+
+    /** 同步异常过滤器到适配器 */
+    async syncExceptionFilters() {
+      const api = window.electronAPI?.debug
+      if (!api) return
+
+      const enabledFilters = this.exceptionFilters
+        .filter(f => f.enabled)
+        .map(f => f.filterId)
+
+      const filterOptions = this.exceptionFilters
+        .filter(f => f.enabled && f.condition)
+        .map(f => ({ filterId: f.filterId, condition: f.condition! }))
+
+      await api.setExceptionBreakpoints(
+        enabledFilters,
+        filterOptions.length > 0 ? filterOptions : undefined
+      )
     },
 
     // ============ 控制台 ============
@@ -828,6 +905,7 @@ export const useDebugStore = defineStore('debug', {
       this.scopes = []
       this.variables.clear()
       this.consoleMessages = []
+      this.exceptionFilters = []
     }
   }
 })
